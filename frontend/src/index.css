@@ -1,0 +1,253 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Document parchment styling */
+.legal-document {
+  background-color: #ffffff;
+  color: #1a1a1a;
+  padding: 2.5rem 3rem;
+  font-family: 'Newsreader', Georgia, serif;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  position: relative;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.07);
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+}
+
+.legal-disclaimer-banner {
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.82rem;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  line-height: 1.4;
+}
+
+.doc-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.doc-meta-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-bottom: 1.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.doc-title {
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 1.85rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.doc-subtitle {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 1rem;
+}
+
+.doc-divider {
+  border: 0;
+  border-top: 2px solid #0f172a;
+  margin: 1.5rem auto 0 auto;
+  width: 60%;
+}
+
+.doc-section {
+  margin-bottom: 2rem;
+}
+
+.doc-section h2 {
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1e293b;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.35rem;
+  margin-bottom: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.pending-field {
+  color: #ea580c;
+  background-color: #fff7ed;
+  border: 1px dashed #fdba74;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.25rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.scope-pill {
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+}
+.scope-worldwide {
+  background-color: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+.scope-domestic {
+  background-color: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+.scope-pending {
+  background-color: #ffedd5;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
+.doc-status-badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.25rem;
+  font-weight: 600;
+}
+.status-complete {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+.status-incomplete {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.doc-list {
+  list-style-type: square;
+  margin-left: 1.5rem;
+  margin-top: 0.5rem;
+}
+
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.75rem;
+  font-size: 0.95rem;
+}
+.doc-table th, .doc-table td {
+  border: 1px solid #cbd5e1;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.doc-table th {
+  background-color: #f8fafc;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.doc-empty-note {
+  font-style: italic;
+  color: #94a3b8;
+  font-size: 0.95rem;
+}
+
+.doc-subtext {
+  font-size: 0.9rem;
+  color: #475569;
+  margin-top: 0.4rem;
+  font-style: italic;
+}
+
+.execution-section {
+  margin-top: 3rem;
+  border-top: 2px solid #e2e8f0;
+  padding-top: 1.5rem;
+}
+
+.signature-line {
+  margin-top: 2.5rem;
+  margin-bottom: 2rem;
+}
+.sig-box {
+  width: 280px;
+}
+.sig-stroke {
+  border-bottom: 1.5px solid #0f172a;
+  margin-bottom: 0.35rem;
+}
+.sig-name {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.witness-box {
+  margin-top: 2rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 1.25rem;
+  border-radius: 0.375rem;
+}
+.witness-box h3 {
+  font-family: 'Cinzel', serif;
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+  font-weight: 700;
+}
+.witness-intro {
+  font-size: 0.85rem;
+  font-family: 'Inter', sans-serif;
+  color: #64748b;
+  margin-bottom: 1rem;
+}
+.witness-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+.witness-col {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  color: #334155;
+}
+.witness-col .line {
+  margin-top: 0.65rem;
+  color: #64748b;
+}
+
+/* Print specific */
+@media print {
+  body {
+    background-color: #ffffff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .legal-document {
+    box-shadow: none;
+    border: none;
+    padding: 0;
+  }
+}
