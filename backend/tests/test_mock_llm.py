@@ -214,3 +214,149 @@ async def test_short_single_word_executor_name(mock_llm):
     assert "full_name" not in res.proposed_state_updates
     assert res.proposed_state_updates.get("executor", {}).get("name") == "Pierre"
     assert res.proposed_state_updates.get("executor", {}).get("relationship") == "friend"
+
+@pytest.mark.asyncio
+async def test_optional_gifts_bare_yes_prompts_for_details(mock_llm):
+    """When user replies 'Yes' to gifts question, assistant prompts for details and does not skip."""
+    history = [
+        ChatMessage(
+            role="assistant",
+            content="Do you have any specific gifts or bequests you would like to leave to particular individuals (e.g. family heirlooms, jewelry, or cash gifts)? You can also reply 'no' to skip."
+        )
+    ]
+    state = PersonalWishesState(
+        full_name="Eleanor Vance",
+        home_address="Hill House, Massachusetts",
+        covers_worldwide_assets=True,
+        has_children=False,
+        executor=ExecutorInfo(name="Theodora", relationship="sister")
+    )
+
+    res = await mock_llm.process_turn("Yes", history, state)
+    assert "specific_gifts" not in res.proposed_state_updates
+    # Must prompt to describe gifts and not prematurely jump to wishes or finalize
+    assert "describe the specific gifts" in res.assistant_message.lower()
+    assert "personal wishes" not in res.assistant_message.lower()
+
+@pytest.mark.asyncio
+async def test_optional_gifts_affirmative_with_details_extracted(mock_llm):
+    """When user replies 'Yes, my vintage watch to my son' or similar, gift is extracted correctly."""
+    history = [
+        ChatMessage(
+            role="assistant",
+            content="Do you have any specific gifts or bequests you would like to leave to particular individuals (e.g. family heirlooms, jewelry, or cash gifts)? You can also reply 'no' to skip."
+        )
+    ]
+    state = PersonalWishesState(
+        full_name="Eleanor Vance",
+        home_address="Hill House, Massachusetts",
+        covers_worldwide_assets=True,
+        has_children=False,
+        executor=ExecutorInfo(name="Theodora", relationship="sister")
+    )
+
+    res = await mock_llm.process_turn("Yes, my vintage watch to my son", history, state)
+    assert "specific_gifts" in res.proposed_state_updates
+    gifts = res.proposed_state_updates["specific_gifts"]
+    assert len(gifts) == 1
+    assert "watch" in gifts[0]["item"].lower()
+    assert "son" in gifts[0]["recipient"].lower()
+    # Must ask if there are other gifts or ready to move on
+    assert "other specific gifts" in res.assistant_message.lower() or "move on" in res.assistant_message.lower()
+
+@pytest.mark.asyncio
+async def test_optional_gifts_donate_books(mock_llm):
+    """When user replies 'I want to donate my books' under gifts question."""
+    history = [
+        ChatMessage(
+            role="assistant",
+            content="Do you have any specific gifts or bequests you would like to leave to particular individuals (e.g. family heirlooms, jewelry, or cash gifts)? You can also reply 'no' to skip."
+        )
+    ]
+    state = PersonalWishesState(
+        full_name="Eleanor Vance",
+        home_address="Hill House, Massachusetts",
+        covers_worldwide_assets=True,
+        has_children=False,
+        executor=ExecutorInfo(name="Theodora", relationship="sister")
+    )
+
+    res = await mock_llm.process_turn("I want to donate my books", history, state)
+    assert "specific_gifts" in res.proposed_state_updates
+    gifts = res.proposed_state_updates["specific_gifts"]
+    assert len(gifts) == 1
+    assert "books" in gifts[0]["item"].lower()
+    assert "charity" in gifts[0]["recipient"].lower() or "donation" in gifts[0]["recipient"].lower()
+
+@pytest.mark.asyncio
+async def test_optional_wishes_bare_yes_prompts_for_details(mock_llm):
+    """When user replies 'Yes' to additional wishes question, assistant prompts for details and does not finalize."""
+    history = [
+        ChatMessage(
+            role="assistant",
+            content="Are there any additional personal wishes or directives you'd like to include, such as funeral arrangements or memorial preferences? You can also reply 'no' if you are ready to finalize."
+        )
+    ]
+    state = PersonalWishesState(
+        full_name="Eleanor Vance",
+        home_address="Hill House, Massachusetts",
+        covers_worldwide_assets=True,
+        has_children=False,
+        executor=ExecutorInfo(name="Theodora", relationship="sister")
+    )
+
+    res = await mock_llm.process_turn("Yes", history, state)
+    assert "additional_wishes" not in res.proposed_state_updates
+    # Must prompt to describe additional wishes and not finalize
+    assert "describe your additional wishes" in res.assistant_message.lower()
+    assert "captured" not in res.assistant_message.lower()
+
+@pytest.mark.asyncio
+async def test_optional_wishes_affirmative_with_details_extracted(mock_llm):
+    """When user replies 'Yes, cremation and ashes scattered in Lake District', wish is extracted."""
+    history = [
+        ChatMessage(
+            role="assistant",
+            content="Are there any additional personal wishes or directives you'd like to include, such as funeral arrangements or memorial preferences? You can also reply 'no' if you are ready to finalize."
+        )
+    ]
+    state = PersonalWishesState(
+        full_name="Eleanor Vance",
+        home_address="Hill House, Massachusetts",
+        covers_worldwide_assets=True,
+        has_children=False,
+        executor=ExecutorInfo(name="Theodora", relationship="sister")
+    )
+
+    res = await mock_llm.process_turn("Yes, cremation and ashes scattered in Lake District", history, state)
+    assert "additional_wishes" in res.proposed_state_updates
+    wishes = res.proposed_state_updates["additional_wishes"]
+    assert len(wishes) == 1
+    assert "cremation" in wishes[0].lower()
+    assert "lake district" in wishes[0].lower()
+    # Must ask if other directives or ready to finalize
+    assert "ready to finalize" in res.assistant_message.lower() or "other personal wishes" in res.assistant_message.lower()
+
+@pytest.mark.asyncio
+async def test_optional_wishes_donate_books(mock_llm):
+    """When user replies 'I want to donate my books' under wishes question."""
+    history = [
+        ChatMessage(
+            role="assistant",
+            content="Are there any additional personal wishes or directives you'd like to include, such as funeral arrangements or memorial preferences? You can also reply 'no' if you are ready to finalize."
+        )
+    ]
+    state = PersonalWishesState(
+        full_name="Eleanor Vance",
+        home_address="Hill House, Massachusetts",
+        covers_worldwide_assets=True,
+        has_children=False,
+        executor=ExecutorInfo(name="Theodora", relationship="sister")
+    )
+
+    res = await mock_llm.process_turn("I want to donate my books", history, state)
+    assert "additional_wishes" in res.proposed_state_updates
+    wishes = res.proposed_state_updates["additional_wishes"]
+    assert len(wishes) == 1
+    assert "donate my books" in wishes[0].lower()
+

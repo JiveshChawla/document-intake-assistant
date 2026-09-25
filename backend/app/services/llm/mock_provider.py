@@ -109,23 +109,28 @@ class MockLLMProvider(BaseLLMProvider):
                 acknowledged_parts.append(f"executor relationship as {executor_update['relationship']}")
 
         # 9. Extract Specific Gifts
-        gifts, gifts_declined = self._extract_gifts(text, last_topic)
+        gifts, gifts_declined, pending_gift_details = self._extract_gifts(text, last_topic)
+        just_added_gift = False
         if gifts:
             existing_gifts = list(current_state.specific_gifts or [])
             updated_gifts = existing_gifts + gifts
             updates["specific_gifts"] = [g.model_dump() for g in updated_gifts]
+            just_added_gift = True
             for g in gifts:
                 acknowledged_parts.append(f"gift of '{g.item}' to {g.recipient}")
         elif gifts_declined:
             acknowledged_parts.append("that you have no specific gifts to designate at this time")
 
         # 10. Extract Additional Wishes
-        wishes, wishes_declined = self._extract_additional_wishes(text, last_topic)
+        wishes, wishes_declined, pending_wish_details = self._extract_additional_wishes(text, last_topic)
+        just_added_wish = False
         if wishes:
             existing_wishes = list(current_state.additional_wishes or [])
             updated_wishes = existing_wishes + wishes
             updates["additional_wishes"] = updated_wishes
-            acknowledged_parts.append(f"additional wish: '{wishes[0]}'")
+            just_added_wish = True
+            for w in wishes:
+                acknowledged_parts.append(f"additional wish: '{w}'")
         elif wishes_declined:
             acknowledged_parts.append("no additional personal wishes to add")
 
@@ -141,7 +146,11 @@ class MockLLMProvider(BaseLLMProvider):
             history=history,
             last_topic=last_topic,
             gifts_declined=gifts_declined,
-            wishes_declined=wishes_declined
+            pending_gift_details=pending_gift_details,
+            just_added_gift=just_added_gift,
+            wishes_declined=wishes_declined,
+            pending_wish_details=pending_wish_details,
+            just_added_wish=just_added_wish,
         )
 
         return LLMExtractionResult(
@@ -159,41 +168,53 @@ class MockLLMProvider(BaseLLMProvider):
         """Finds what question the assistant asked in the latest turn."""
         for msg in reversed(history):
             if msg.role == "assistant":
-                content = msg.content.lower()
-                # 1. EXECUTOR TOPICS (Must check FIRST so 'full legal name of your executor' maps to EXECUTOR_NAME, not principal NAME)
-                if "executor" in content or "administer your estate" in content:
-                    if "full legal name" in content or "full name" in content or "what is the name" in content or "what is the full" in content:
+                # Look at the question portion (last paragraph) to avoid false matches on acknowledgment headers
+                paragraphs = [p.strip() for p in msg.content.split("\n\n") if p.strip()]
+                question_text = paragraphs[-1].lower() if paragraphs else msg.content.lower()
+
+                # 1. GIFTS & WISHES SUB-TOPICS (Check specific follow-up sub-topics first)
+                if "other personal wishes" in question_text or "ready to finalize" in question_text:
+                    return "WISHES_DETAILS"
+                if "describe your additional wishes" in question_text or "additional wishes or directives" in question_text:
+                    return "WISHES_DETAILS"
+                if "additional personal wishes" in question_text or "additional wishes" in question_text or "funeral arrangements" in question_text or "memorial preferences" in question_text:
+                    return "WISHES"
+
+                if "any other specific gifts" in question_text or "move on to additional" in question_text:
+                    return "GIFTS_OR_WISHES"
+                if "describe the specific gifts" in question_text or "who should receive each" in question_text or "specific gifts or bequests and who" in question_text:
+                    return "GIFTS_DETAILS"
+                if "specific gifts" in question_text or "bequests" in question_text:
+                    return "GIFTS"
+
+                # 2. EXECUTOR TOPICS (Must check FIRST before principal NAME so 'full legal name of your executor' maps to EXECUTOR_NAME)
+                if "executor" in question_text or "administer your estate" in question_text:
+                    if "full legal name" in question_text or "full name" in question_text or "what is the name" in question_text or "what is the full" in question_text:
                         return "EXECUTOR_NAME"
-                    if "relationship" in content:
-                        if not ("who would you like" in content or "appoint" in content):
+                    if "relationship" in question_text:
+                        if not ("who would you like" in question_text or "appoint" in question_text):
                             return "EXECUTOR_RELATIONSHIP"
                     return "EXECUTOR_ALL"
-                if "relationship to you" in content:
+                if "relationship to you" in question_text:
                     return "EXECUTOR_RELATIONSHIP"
 
-                # 2. PRINCIPAL FULL NAME
-                if "legal name" in content or "tell me your full name" in content or "what is your full name" in content or "your name" in content:
+                # 3. PRINCIPAL FULL NAME
+                if "legal name" in question_text or "tell me your full name" in question_text or "what is your full name" in question_text or "your name" in question_text:
                     return "NAME"
 
-                # 3. RESIDENTIAL ADDRESS
-                if "residential" in content or "home address" in content or "where do you live" in content:
+                # 4. RESIDENTIAL ADDRESS
+                if "residential" in question_text or "home address" in question_text or "where do you live" in question_text:
                     return "ADDRESS"
 
-                # 4. ASSET JURISDICTION
-                if "worldwide assets" in content or "strictly domestic" in content or "country of residence" in content:
+                # 5. ASSET JURISDICTION
+                if "worldwide assets" in question_text or "strictly domestic" in question_text or "country of residence" in question_text:
                     return "WORLDWIDE"
 
-                # 5. CHILDREN
-                if "names of your children" in content or "names of your child" in content:
+                # 6. CHILDREN
+                if "names of your children" in question_text or "names of your child" in question_text:
                     return "CHILDREN_NAMES"
-                if "have any children" in content or "do you have children" in content:
+                if "have any children" in question_text or "do you have children" in question_text:
                     return "CHILDREN_STATUS"
-
-                # 6. GIFTS & WISHES
-                if "specific gifts" in content or "bequests" in content:
-                    return "GIFTS"
-                if "additional personal wishes" in content or "additional wishes" in content or "funeral arrangements" in content:
-                    return "WISHES"
         return None
 
     # -------------------------------------------------------------
@@ -202,9 +223,10 @@ class MockLLMProvider(BaseLLMProvider):
     def _extract_name(
         self, text: str, current_state: PersonalWishesState, last_topic: Optional[str]
     ) -> Optional[str]:
-        # STRICT GUARD 1: If current turn is about EXECUTOR, NEVER extract principal full_name!
-        if last_topic in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP"]:
-            return None
+        # STRICT GUARD 1: If current turn is about EXECUTOR, GIFTS, or WISHES, NEVER extract principal full_name!
+        if last_topic in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP", "GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES", "WISHES", "WISHES_DETAILS"]:
+            if not re.search(r"\b(change my name to|update my name to)\b", text, re.IGNORECASE):
+                return None
 
         # STRICT GUARD 2: If current_state.full_name is already confirmed, ONLY allow explicit corrections!
         if current_state.full_name is not None and len(current_state.full_name.strip()) > 0:
@@ -261,6 +283,11 @@ class MockLLMProvider(BaseLLMProvider):
     def _extract_address(
         self, text: str, current_state: PersonalWishesState, last_topic: Optional[str], has_name: bool = False
     ) -> Optional[str]:
+        # STRICT GUARD: If current turn is about EXECUTOR, GIFTS, or WISHES, NEVER extract address unless explicit correction!
+        if last_topic in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP", "GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES", "WISHES", "WISHES_DETAILS"]:
+            if not re.search(r"\b(change my address to|update my address to)\b", text, re.IGNORECASE):
+                return None
+
         # Explicit patterns
         patterns = [
             r"(?:actually|please)?\s*(?:change my address to|update my address to)\s+([^.]+)",
@@ -325,6 +352,16 @@ class MockLLMProvider(BaseLLMProvider):
     ) -> Tuple[Optional[bool], Optional[List[str]], Optional[str]]:
         t = text.lower()
 
+        # STRICT GUARD 1: If current turn is about GIFTS, WISHES, or EXECUTOR, NEVER extract children status unless explicitly discussing children!
+        if last_topic in ["GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES", "WISHES", "WISHES_DETAILS", "EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP"]:
+            if not re.search(r"\b(children|child|kids)\b", t):
+                return None, None, None
+
+        # STRICT GUARD 2: If current_state.has_children is already set, do not alter it unless explicit correction!
+        if current_state.has_children is not None:
+            if not re.search(r"\b(actually|change|correction|update)\b", t):
+                return None, None, None
+
         # Negative phrases (no children)
         if re.search(r"\b(no children|don't have (?:any )?children|do not have (?:any )?children|no kids|haven't got (?:any )?children|zero children|without children|not have (?:any )?children|have no children|no child)\b", t):
             return False, [], None
@@ -381,6 +418,11 @@ class MockLLMProvider(BaseLLMProvider):
         self, text: str, current_state: PersonalWishesState, last_topic: Optional[str]
     ) -> Tuple[Optional[Dict[str, Optional[str]]], Optional[str]]:
         t = text.lower()
+        # STRICT GUARD: If current turn is about GIFTS or WISHES, NEVER extract executor unless explicitly appointing executor!
+        if last_topic in ["GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES", "WISHES", "WISHES_DETAILS"]:
+            if not re.search(r"\b(executor|personal representative|appoint as executor)\b", t):
+                return None, None
+
         is_executor_turn = (
             last_topic in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP"]
             or bool(re.search(r"\b(executor|appoint|personal representative)\b", t))
@@ -472,37 +514,197 @@ class MockLLMProvider(BaseLLMProvider):
 
         return None, None
 
-    def _extract_gifts(self, text: str, last_topic: Optional[str]) -> Tuple[List[GiftItem], bool]:
-        t = text.lower().strip()
-        # Check if user declines specific gifts
-        if last_topic == "GIFTS":
-            if re.search(r"\b(no|none|nothing|skip|no gifts|not at this time|no specific gifts|none for now|leave everything to executor)\b", t):
-                return [], True
+    def _extract_gifts(
+        self, text: str, last_topic: Optional[str]
+    ) -> Tuple[List[GiftItem], bool, bool]:
+        """
+        Returns:
+            - gifts: List of extracted GiftItem
+            - gifts_declined: bool (True if user declined gifts)
+            - pending_gift_details: bool (True if user answered yes without gift details)
+        """
+        t = text.strip()
+        t_lower = t.lower()
 
-        gifts = []
-        patterns = [
-            r"(?:give|leave|bequeath)\s+(?:my\s+)?([^,]+?)\s+to\s+([A-Za-zÀ-ÿ\s\-\'\.]+)",
-            r"([A-Za-zÀ-ÿ\s\-\'\.]+)\s+(?:gets|receives|should receive)\s+(?:my\s+)?([^.]+)",
-        ]
-        for pat in patterns:
-            matches = re.finditer(pat, text, re.IGNORECASE)
-            for m in matches:
-                if pat.startswith(r"(?:give"):
-                    item, recipient = m.group(1).strip(), m.group(2).strip()
-                else:
-                    recipient, item = m.group(1).strip(), m.group(2).strip()
-                gifts.append(GiftItem(item=item, recipient=recipient))
+        is_gift_topic = last_topic in ["GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES"]
+        has_gift_keywords = bool(re.search(r"\b(gift|gifts|bequeath|bequest|leave my|give my|donate)\b", t_lower))
 
-        return gifts, False
+        if not is_gift_topic and not has_gift_keywords:
+            return [], False, False
 
-    def _extract_additional_wishes(self, text: str, last_topic: Optional[str]) -> Tuple[List[str], bool]:
-        t = text.lower().strip()
-        # Check if user declines additional wishes
-        if last_topic == "WISHES":
-            if re.search(r"\b(no|none|that's all|nothing else|no additional wishes|nope|skip|all good|ready)\b", t):
-                return [], True
+        # 1. Check if user declines
+        if is_gift_topic:
+            decline_phrases = r"\b(no gifts|not at this time|no specific gifts|none for now|leave everything to executor|no more gifts|no other gifts|move on|that's all|thats all|that is all|nothing else|skip)\b"
+            is_start_no = bool(re.search(r"^(?:no|nope|nah|none|nothing|skip)(?:,.*)?$", t_lower))
+            if re.search(decline_phrases, t_lower) or is_start_no:
+                # Ensure user isn't actually specifying a gift
+                if not re.search(r"\b(give|leave|bequeath|gift|donate|watch|ring|car|house|money|cash|fund|to\s+[a-z]+)\b", t_lower):
+                    return [], True, False
 
-        wishes = []
+        # 2. Check for bare affirmative (user says "Yes" without describing gifts)
+        bare_yes = bool(re.search(
+            r"^(?:yes|yeah|yep|sure|i do|yes please|yes i do|yes i have|i have some|certainly|definitely|yes i would|i would)$",
+            t_lower
+        ) or re.search(r"^(?:yes|yeah|yep|sure),?\s*(?:i have (?:some|a few)|i do|i would like to leave some gifts?)?$", t_lower))
+
+        if bare_yes and is_gift_topic:
+            return [], False, True
+
+        # 3. Extract gift items
+        gifts: List[GiftItem] = []
+
+        # Remove leading affirmations / conversational filler
+        cleaned_text = re.sub(
+            r"^(?:yes|yeah|yep|sure|ok|okay),?\s*(?:i want to|i would like to|i'd like to|please)?\s*",
+            "",
+            t,
+            flags=re.IGNORECASE
+        ).strip()
+        cleaned_text = re.sub(r"^(?:i want to|i'd like to|i wish to|please)\s+", "", cleaned_text, flags=re.IGNORECASE).strip()
+
+        # Split into multiple gift clauses if separated by semicolon or ' and ' followed by gift keyword
+        clauses = re.split(r";\s*|\s+and\s+(?=(?:give|leave|bequeath|donate|my\s+|to\s+))", cleaned_text, flags=re.IGNORECASE)
+
+        for clause in clauses:
+            clause = clause.strip().rstrip(".,")
+            if not clause:
+                continue
+
+            gift_found = False
+
+            # Pattern A: (give/leave/bequeath) [item] to [recipient]
+            mA = re.search(r"(?:give|leave|bequeath|gift)\s+(?:my\s+)?(.+?)\s+to\s+(.+)", clause, re.IGNORECASE)
+            if mA:
+                item = self._clean_gift_item(mA.group(1).strip())
+                recipient = self._clean_gift_recipient(mA.group(2).strip())
+                if item and recipient:
+                    gifts.append(GiftItem(item=item, recipient=recipient))
+                    gift_found = True
+
+            # Pattern B: [item] to [recipient] (e.g. "my vintage watch to my son", "vintage watch to Lucas")
+            if not gift_found:
+                mB = re.search(r"^(?:my\s+)?(.+?)\s+to\s+(.+)$", clause, re.IGNORECASE)
+                if mB:
+                    cand_item = self._clean_gift_item(mB.group(1).strip())
+                    cand_recip = self._clean_gift_recipient(mB.group(2).strip())
+                    if cand_item and cand_recip and len(cand_item) >= 2 and len(cand_recip) >= 2:
+                        gifts.append(GiftItem(item=cand_item, recipient=cand_recip))
+                        gift_found = True
+
+            # Pattern C: [recipient] gets/receives/inherits [item]
+            if not gift_found:
+                mC = re.search(r"(.+?)\s+(?:gets|receives|should receive|inherits)\s+(?:my\s+)?(.+)", clause, re.IGNORECASE)
+                if mC:
+                    cand_recip = self._clean_gift_recipient(mC.group(1).strip())
+                    cand_item = self._clean_gift_item(mC.group(2).strip())
+                    if cand_recip and cand_item:
+                        gifts.append(GiftItem(item=cand_item, recipient=cand_recip))
+                        gift_found = True
+
+            # Pattern D: donate [item] [to recipient (optional)]
+            if not gift_found:
+                mD = re.search(r"(?:donate|charity)\s+(?:my\s+)?(.+?)(?:\s+to\s+(.+))?$", clause, re.IGNORECASE)
+                if mD:
+                    cand_item = self._clean_gift_item(mD.group(1).strip())
+                    cand_recip = self._clean_gift_recipient(mD.group(2).strip()) if mD.group(2) else "Charity / Donation"
+                    if cand_item:
+                        gifts.append(GiftItem(item=cand_item, recipient=cand_recip))
+                        gift_found = True
+
+            # Pattern E: to [recipient], [item]
+            if not gift_found:
+                mE = re.search(r"^to\s+([A-Za-zÀ-ÿ\s\-\'\.]+)[,:]\s+(?:my\s+)?(.+)$", clause, re.IGNORECASE)
+                if mE:
+                    cand_recip = self._clean_gift_recipient(mE.group(1).strip())
+                    cand_item = self._clean_gift_item(mE.group(2).strip())
+                    if cand_recip and cand_item:
+                        gifts.append(GiftItem(item=cand_item, recipient=cand_recip))
+                        gift_found = True
+
+        if gifts:
+            return gifts, False, False
+
+        # Fallback if in gift topic and text has " to "
+        if is_gift_topic and " to " in cleaned_text.lower():
+            parts = re.split(r"\s+to\s+", cleaned_text, maxsplit=1, flags=re.IGNORECASE)
+            if len(parts) == 2:
+                item = self._clean_gift_item(parts[0].strip())
+                recip = self._clean_gift_recipient(parts[1].strip())
+                if item and recip:
+                    return [GiftItem(item=item, recipient=recip)], False, False
+
+        return [], False, False
+
+    def _clean_gift_item(self, item_str: str) -> str:
+        s = item_str.strip().rstrip(".,")
+        s = re.sub(r"^(?:my|the|a|an)\s+", "", s, flags=re.IGNORECASE).strip()
+        if s:
+            s = s[0].upper() + s[1:]
+        return s
+
+    def _clean_gift_recipient(self, recipient_str: str) -> str:
+        s = recipient_str.strip().rstrip(".,")
+        s = re.sub(r"^(?:to\s+)", "", s, flags=re.IGNORECASE).strip()
+        if s:
+            s = s[0].upper() + s[1:]
+        return s
+
+    def _extract_additional_wishes(
+        self, text: str, last_topic: Optional[str]
+    ) -> Tuple[List[str], bool, bool]:
+        """
+        Returns:
+            - wishes: List of extracted wish strings
+            - wishes_declined: bool (True if user declined additional wishes)
+            - pending_wish_details: bool (True if user answered yes without wish details)
+        """
+        t = text.strip()
+        t_lower = t.lower()
+
+        is_wishes_topic = last_topic in ["WISHES", "WISHES_DETAILS"]
+        has_wish_keywords = bool(re.search(
+            r"\b(cremat|scatter|funeral|memorial|burial|buried|organ donor|donate organs|wishes|directive|service|plot|ceremony)\b",
+            t_lower
+        ))
+
+        if not is_wishes_topic and not has_wish_keywords:
+            return [], False, False
+
+        # 1. Check if user declines
+        if is_wishes_topic:
+            decline_phrases = r"\b(no additional wishes|that's all|thats all|that is all|nothing else|no wishes|nothing more|ready to finalize|ready|all good|finalize|skip)\b"
+            is_start_no = bool(re.search(r"^(?:no|nope|nah|none|nothing|skip)(?:,.*)?$", t_lower))
+            if re.search(decline_phrases, t_lower) or is_start_no:
+                if not re.search(r"\b(cremat|scatter|funeral|memorial|burial|buried|organ donor|donate|wishes|directive|service|plot|ceremony)\b", t_lower):
+                    return [], True, False
+
+        # 2. Check for bare affirmative (user says "Yes" without describing wishes)
+        bare_yes = bool(re.search(
+            r"^(?:yes|yeah|yep|sure|i do|yes please|yes i do|yes i have|i have some|certainly|definitely|yes i would|i would)$",
+            t_lower
+        ) or re.search(r"^(?:yes|yeah|yep|sure),?\s*(?:i have (?:some|a few)|i do|i have additional wishes?)?$", t_lower))
+
+        if bare_yes and is_wishes_topic:
+            return [], False, True
+
+        # 3. Extract wishes
+        cleaned_text = re.sub(
+            r"^(?:yes|yeah|yep|sure|ok|okay),?\s*(?:i want|i wish|please|i would like)?\s*",
+            "",
+            t,
+            flags=re.IGNORECASE
+        ).strip()
+        cleaned_text = re.sub(r"^(?:additional wish(?:es)?|directive(?:s)?):\s*", "", cleaned_text, flags=re.IGNORECASE).strip()
+
+        # If in wishes topic and user provided substantive directive
+        if is_wishes_topic and len(cleaned_text) >= 3:
+            if not re.search(r"^(?:hello|hi|hey|thanks|thank you)$", cleaned_text.lower()):
+                formatted_wish = cleaned_text.rstrip(".,")
+                if formatted_wish:
+                    formatted_wish = formatted_wish[0].upper() + formatted_wish[1:]
+                    return [formatted_wish], False, False
+
+        # Keyword-based fallback
         patterns = [
             r"(?:i wish to be|i want to be|cremated|ashes scattered|buried|funeral preferences?)\s*([^.]+)?",
             r"(?:additional wish(?:es)?|further wish(?:es)?):\s*([^.]+)",
@@ -512,10 +714,9 @@ class MockLLMProvider(BaseLLMProvider):
             m = re.search(pat, text, re.IGNORECASE)
             if m:
                 full_match = m.group(0).strip().rstrip(".,")
-                wishes.append(full_match)
-                break
+                return [full_match], False, False
 
-        return wishes, False
+        return [], False, False
 
     def _simulate_state(self, current: PersonalWishesState, updates: Dict[str, Any]) -> PersonalWishesState:
         data = current.model_dump()
@@ -537,7 +738,11 @@ class MockLLMProvider(BaseLLMProvider):
         history: List[ChatMessage],
         last_topic: Optional[str],
         gifts_declined: bool,
+        pending_gift_details: bool,
+        just_added_gift: bool,
         wishes_declined: bool,
+        pending_wish_details: bool,
+        just_added_wish: bool,
     ) -> str:
         parts = []
 
@@ -555,7 +760,15 @@ class MockLLMProvider(BaseLLMProvider):
 
         # Sequential follow-up question based on what's missing
         next_question = self._get_next_question(
-            simulated_state, history, last_topic, gifts_declined, wishes_declined
+            state=simulated_state,
+            history=history,
+            last_topic=last_topic,
+            gifts_declined=gifts_declined,
+            pending_gift_details=pending_gift_details,
+            just_added_gift=just_added_gift,
+            wishes_declined=wishes_declined,
+            pending_wish_details=pending_wish_details,
+            just_added_wish=just_added_wish,
         )
         parts.append(next_question)
 
@@ -567,7 +780,11 @@ class MockLLMProvider(BaseLLMProvider):
         history: List[ChatMessage],
         last_topic: Optional[str] = None,
         gifts_declined: bool = False,
-        wishes_declined: bool = False
+        pending_gift_details: bool = False,
+        just_added_gift: bool = False,
+        wishes_declined: bool = False,
+        pending_wish_details: bool = False,
+        just_added_wish: bool = False,
     ) -> str:
         if not state.full_name:
             return "Could you please tell me your full legal name?"
@@ -587,26 +804,63 @@ class MockLLMProvider(BaseLLMProvider):
             elif not state.executor.relationship:
                 return f"What is {state.executor.name}'s relationship to you (e.g., brother, sister, spouse, friend)?"
 
+        # -------------------------------------------------------------
         # Optional sections: Gifts
-        gifts_already_handled = (
-            bool(state.specific_gifts and len(state.specific_gifts) > 0)
-            or gifts_declined
-            or last_topic in ["GIFTS", "WISHES"]
+        # -------------------------------------------------------------
+        if pending_gift_details:
+            return "Wonderful. Please describe the specific gifts or bequests and who should receive each one (for example: 'my vintage watch to my son Lucas' or '£5,000 to Cancer Research')."
+
+        if just_added_gift:
+            return "Do you have any other specific gifts you would like to add, or are you ready to move on to additional personal wishes? (You can describe another gift or reply 'no' / 'move on')."
+
+        if last_topic == "GIFTS_DETAILS" and not gifts_declined:
+            return "Please describe the specific gift item and recipient (for example: 'my vintage watch to my son'), or reply 'no' / 'skip' to move on."
+
+        gifts_resolved = (
+            gifts_declined
+            or (last_topic == "GIFTS_OR_WISHES" and not just_added_gift)
+            or last_topic in ["WISHES", "WISHES_DETAILS"]
             or wishes_declined
-            or any("specific gifts" in m.content.lower() or "bequests" in m.content.lower() for m in history)
+            or just_added_wish
+            or pending_wish_details
+            or (bool(state.specific_gifts and len(state.specific_gifts) > 0) and last_topic not in ["GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES"])
+            or any("additional personal wishes" in m.content.lower() or "additional wishes" in m.content.lower() for m in history)
         )
-        if not gifts_already_handled:
+
+        if not gifts_resolved:
             return "Do you have any specific gifts or bequests you would like to leave to particular individuals (e.g. family heirlooms, jewelry, or cash gifts)? You can also reply 'no' to skip."
 
+        # -------------------------------------------------------------
         # Optional sections: Wishes
-        wishes_already_handled = (
-            bool(state.additional_wishes and len(state.additional_wishes) > 0)
-            or wishes_declined
-            or (last_topic == "WISHES")
+        # -------------------------------------------------------------
+        if pending_wish_details:
+            return "Please go ahead and describe your additional wishes or directives (such as funeral preferences, memorial services, or medical instructions)."
+
+        if just_added_wish:
+            return "Do you have any other personal wishes or directives to add, or are you ready to finalize? (Reply with another wish or 'ready' / 'finalize')."
+
+        if last_topic == "WISHES_DETAILS" and not wishes_declined:
+            return "Please describe any further directives you would like included, or reply 'ready' / 'finalize' when you are all done."
+
+        wishes_resolved = (
+            wishes_declined
+            or (bool(state.additional_wishes and len(state.additional_wishes) > 0) and not just_added_wish and last_topic not in ["WISHES", "WISHES_DETAILS"])
         )
-        if not wishes_already_handled:
+
+        wishes_already_asked = any(
+            "additional personal wishes" in m.content.lower() or "additional wishes" in m.content.lower()
+            for m in history
+        ) or last_topic in ["WISHES", "WISHES_DETAILS"]
+
+        if not wishes_already_asked and not wishes_resolved:
             return "Are there any additional personal wishes or directives you'd like to include, such as funeral arrangements or memorial preferences? You can also reply 'no' if you are ready to finalize."
 
+        if not wishes_resolved and last_topic == "WISHES":
+            return "Are there any additional personal wishes or directives you'd like to include, such as funeral arrangements or memorial preferences? You can also reply 'no' if you are ready to finalize."
+
+        # -------------------------------------------------------------
+        # Completed intake
+        # -------------------------------------------------------------
         return "All necessary details for your Personal Wishes Document have been captured! Please review the live legal draft preview on the right. You can ask me to change any detail at any time."
 
     def _check_fixture_triggers(self, text: str) -> Optional[LLMExtractionResult]:

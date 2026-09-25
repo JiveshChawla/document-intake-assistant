@@ -123,3 +123,41 @@ async def test_full_conversational_intake_with_executor_followup():
         assert d6["state"]["executor"]["name"] == "Ford Prefect"
         assert d6["state"]["executor"]["relationship"] == "brother"
         assert d6["completion_percentage"] == 100
+
+        # Turn 7: Gifts - Bare 'Yes'
+        r7 = await client.post("/api/chat", json={"session_id": sid, "message": "Yes"})
+        d7 = r7.json()
+        assert "describe the specific gifts" in d7["message"]["content"].lower()
+        assert len(d7["state"]["specific_gifts"]) == 0
+
+        # Turn 8: Gifts - Provide gift detail
+        r8 = await client.post("/api/chat", json={"session_id": sid, "message": "My vintage watch to my son Lucas"})
+        d8 = r8.json()
+        assert len(d8["state"]["specific_gifts"]) == 1
+        assert "watch" in d8["state"]["specific_gifts"][0]["item"].lower()
+        assert "lucas" in d8["state"]["specific_gifts"][0]["recipient"].lower()
+        # Verify gift is rendered in live document markdown
+        assert "vintage watch" in d8["document_markdown"].lower()
+        assert "lucas" in d8["document_markdown"].lower()
+
+        # Turn 9: Gifts - Move on
+        r9 = await client.post("/api/chat", json={"session_id": sid, "message": "No, move on"})
+        d9 = r9.json()
+        assert "additional personal wishes" in d9["message"]["content"].lower()
+
+        # Turn 10: Wishes - Provide directive
+        r10 = await client.post("/api/chat", json={"session_id": sid, "message": "Cremation and ashes scattered in Lake District"})
+        d10 = r10.json()
+        assert len(d10["state"]["additional_wishes"]) == 1
+        assert "lake district" in d10["state"]["additional_wishes"][0].lower()
+        # Verify wish is rendered in live document markdown
+        assert "lake district" in d10["document_markdown"].lower()
+
+        # Turn 11: Finalize
+        r11 = await client.post("/api/chat", json={"session_id": sid, "message": "Ready to finalize"})
+        d11 = r11.json()
+        assert "captured" in d11["message"]["content"].lower() or "review" in d11["message"]["content"].lower()
+        assert d11["completion_percentage"] == 100
+        assert len(d11["state"]["specific_gifts"]) == 1
+        assert len(d11["state"]["additional_wishes"]) == 1
+
