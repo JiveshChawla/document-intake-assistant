@@ -150,3 +150,67 @@ async def test_intelligent_follow_up_progression(mock_llm):
     state = PersonalWishesState(full_name="Arthur Dent")
     result = await mock_llm.process_turn("Hello again", [], state)
     assert "address" in result.assistant_message.lower()
+
+@pytest.mark.asyncio
+async def test_executor_turn_strictly_maps_to_executor_not_full_name(mock_llm):
+    """Verify that providing an executor name/relationship never overwrites full_name."""
+    history = [
+        ChatMessage(
+            role="assistant",
+            content="Who would you like to appoint as your Executor (the person who will administer your estate and carry out your wishes), and what is their relationship to you?"
+        )
+    ]
+    state = PersonalWishesState(
+        full_name="Alice Cooper",
+        home_address="10 Downing St",
+        covers_worldwide_assets=True,
+        has_children=False
+    )
+
+    # User enters "My brother James"
+    res = await mock_llm.process_turn("My brother James", history, state)
+    assert "full_name" not in res.proposed_state_updates
+    assert res.proposed_state_updates.get("executor", {}).get("name") == "James"
+    assert res.proposed_state_updates.get("executor", {}).get("relationship") == "brother"
+
+@pytest.mark.asyncio
+async def test_executor_name_followup_preserves_principal_name(mock_llm):
+    """When assistant asks 'What is the full legal name of your brother...', answer must map to executor.name and NOT full_name."""
+    history = [
+        ChatMessage(
+            role="assistant",
+            content="What is the full legal name of your brother whom you wish to appoint as executor?"
+        )
+    ]
+    state = PersonalWishesState(
+        full_name="Alice Cooper",
+        home_address="10 Downing St",
+        covers_worldwide_assets=True,
+        has_children=False,
+        executor=ExecutorInfo(name=None, relationship="brother")
+    )
+
+    # User answers just the name
+    res = await mock_llm.process_turn("James Smith", history, state)
+    assert "full_name" not in res.proposed_state_updates
+    assert res.proposed_state_updates.get("executor", {}).get("name") == "James Smith"
+    assert res.proposed_state_updates.get("executor", {}).get("relationship") == "brother"
+
+@pytest.mark.asyncio
+async def test_short_single_word_executor_name(mock_llm):
+    """When user enters a single word name like 'Pierre' for executor."""
+    history = [
+        ChatMessage(
+            role="assistant",
+            content="What is the full legal name of your friend whom you wish to appoint as executor?"
+        )
+    ]
+    state = PersonalWishesState(
+        full_name="Alice Cooper",
+        executor=ExecutorInfo(name=None, relationship="friend")
+    )
+
+    res = await mock_llm.process_turn("Pierre", history, state)
+    assert "full_name" not in res.proposed_state_updates
+    assert res.proposed_state_updates.get("executor", {}).get("name") == "Pierre"
+    assert res.proposed_state_updates.get("executor", {}).get("relationship") == "friend"

@@ -105,9 +105,21 @@ CRITICAL GUIDELINES:
 - **User Feedback / Test:** Users answering simply `"Yes"` or `"Yes I do"` to `"Do you have any children?"` were ignored because the positive matcher required `"have children"`.
 - **Correction Made:** Added direct affirmative recognition for children (`yes`, `yeah`, `yep`, `yes I do`, `sure`). If names are included in the same message (`Yes, Lucas and Emma`), both status and names are parsed in one turn. If only `"Yes"` is provided, `has_children` is marked `True` and the assistant seamlessly asks for children's names.
 
+### Case F: State-Mapping Cross-Contamination (Executor Name Overwriting Principal Full Name)
+- **User Feedback / Bug Report:** When the user was asked about their executor and provided a name or short text, the parser accidentally overwrote the user's `full_name` instead of saving the executor's name and relationship.
+- **Root Cause Analysis:** 
+  1. In `_get_last_question_topic`, the general rule `"legal name" in content` was checked before the specific executor rule. When the assistant asked: *"What is the full legal name of your brother whom you wish to appoint as executor?"*, the classifier saw `"legal name"` and tagged the turn as `NAME` rather than `EXECUTOR_NAME`.
+  2. `_extract_name` lacked a guard to prevent extracting names during executor turns, so it took the executor's name and assigned it to `updates["full_name"]`.
+- **Correction Made:**
+  1. Re-ordered topic classification to evaluate executor questions first, correctly identifying `EXECUTOR_NAME` and `EXECUTOR_RELATIONSHIP`.
+  2. Enforced strict context guards in `_extract_name`: if the current turn is an executor turn, or if `current_state.full_name` is already confirmed, `_extract_name` strictly returns `None` (protecting against overwrite unless the user explicitly requests *"change my name to..."*).
+  3. Added an explicit validation check in `process_turn`: if `last_topic` is an executor topic, any `full_name` field is deleted from `updates`.
+  4. Expanded executor input parsing to support short single-word names (`"James"`, `"Pierre"`), stripping verbal fluff (`"His name is"`, `"Appoint"`, `"I choose"`), and cleanly merging partial inputs into the `executor` object.
+
 ---
 
 ## 4. Key Takeaways
 1. **Context-Aware Intent Disambiguation:** By tracking the conversational topic of the preceding assistant prompt (`last_topic`), the mock engine can accurately interpret terse user replies (`"Yes"`, `"Worldwide"`, `"Pierre and Sophie"`, `"Flat 4B, Tokyo"`) without requiring users to speak in rigid template sentences.
-2. **Never rely on the LLM as the database:** LLMs are great reasoning and extraction engines, but horrible databases. Isolating state in a Pydantic schema and only applying validated deltas eliminated state drift and hallucinated data.
-3. **Ambiguity must be explicit:** Making ambiguity a first-class citizen in the response model (`ambiguities: List[str]`) allows both the assistant and the UI to communicate uncertainties clearly to the user.
+2. **Turn Isolation & State Guardrails:** Multi-turn conversational systems must enforce strict state protection guards. Once a core attribute like the user's legal identity is confirmed, it should be immutably locked against casual conversational cross-talk, requiring explicit affirmative intent to mutate.
+3. **Never rely on the LLM as the database:** LLMs are great reasoning and extraction engines, but horrible databases. Isolating state in a Pydantic schema and only applying validated deltas eliminated state drift and hallucinated data.
+4. **Ambiguity must be explicit:** Making ambiguity a first-class citizen in the response model (`ambiguities: List[str]`) allows both the assistant and the UI to communicate uncertainties clearly to the user.

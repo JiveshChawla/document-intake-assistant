@@ -82,3 +82,44 @@ async def test_manual_state_edit():
         assert data["state"]["full_name"] == "Dr. Watson"
         assert data["completion_percentage"] == 100
         assert "Sherlock Holmes" in data["document_markdown"]
+
+@pytest.mark.asyncio
+async def test_full_conversational_intake_with_executor_followup():
+    """Test full multi-turn interview verifying that executor name does not overwrite user's full_name."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        sid = "complete_flow_user"
+
+        # Turn 1: Name
+        r1 = await client.post("/api/chat", json={"session_id": sid, "message": "My name is Arthur Dent"})
+        assert r1.json()["state"]["full_name"] == "Arthur Dent"
+
+        # Turn 2: Address
+        r2 = await client.post("/api/chat", json={"session_id": sid, "message": "15 Country Lane, Cottington, England"})
+        assert r2.json()["state"]["full_name"] == "Arthur Dent"
+        assert "Cottington" in r2.json()["state"]["home_address"]
+
+        # Turn 3: Worldwide assets
+        r3 = await client.post("/api/chat", json={"session_id": sid, "message": "Worldwide assets please"})
+        assert r3.json()["state"]["covers_worldwide_assets"] is True
+
+        # Turn 4: Children
+        r4 = await client.post("/api/chat", json={"session_id": sid, "message": "No children"})
+        assert r4.json()["state"]["has_children"] is False
+
+        # Turn 5: Executor - Partial (relationship only)
+        r5 = await client.post("/api/chat", json={"session_id": sid, "message": "My brother"})
+        d5 = r5.json()
+        assert d5["state"]["full_name"] == "Arthur Dent"  # Full name MUST NOT change
+        assert d5["state"]["executor"]["relationship"] == "brother"
+        assert d5["state"]["executor"]["name"] is None
+        assert len(d5["ambiguities"]) > 0
+
+        # Turn 6: Executor - Follow up name
+        r6 = await client.post("/api/chat", json={"session_id": sid, "message": "Ford Prefect"})
+        d6 = r6.json()
+        # Full name MUST REMAIN Arthur Dent!
+        assert d6["state"]["full_name"] == "Arthur Dent"
+        assert d6["state"]["executor"]["name"] == "Ford Prefect"
+        assert d6["state"]["executor"]["relationship"] == "brother"
+        assert d6["completion_percentage"] == 100

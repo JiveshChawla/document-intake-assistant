@@ -50,7 +50,7 @@ class MockLLMProvider(BaseLLMProvider):
 
         # 4. Extract Full Name
         name = self._extract_name(text, current_state, last_topic)
-        if name is not None:
+        if name is not None and last_topic not in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP"]:
             updates["full_name"] = name
             acknowledged_parts.append(f"name as {name}")
 
@@ -160,22 +160,36 @@ class MockLLMProvider(BaseLLMProvider):
         for msg in reversed(history):
             if msg.role == "assistant":
                 content = msg.content.lower()
-                if "legal name" in content or "tell me your full name" in content or "what is your full name" in content:
-                    return "NAME"
-                if "residential" in content or "home address" in content or "where do you live" in content:
-                    return "ADDRESS"
-                if "worldwide assets" in content or "strictly domestic" in content or "country of residence" in content:
-                    return "WORLDWIDE"
-                if "have any children" in content or "do you have children" in content:
-                    return "CHILDREN_STATUS"
-                if "names of your children" in content or "names of your child" in content:
-                    return "CHILDREN_NAMES"
-                if "appoint as your executor" in content or "administer your estate" in content:
+                # 1. EXECUTOR TOPICS (Must check FIRST so 'full legal name of your executor' maps to EXECUTOR_NAME, not principal NAME)
+                if "executor" in content or "administer your estate" in content:
+                    if "full legal name" in content or "full name" in content or "what is the name" in content or "what is the full" in content:
+                        return "EXECUTOR_NAME"
+                    if "relationship" in content:
+                        if not ("who would you like" in content or "appoint" in content):
+                            return "EXECUTOR_RELATIONSHIP"
                     return "EXECUTOR_ALL"
-                if "full name of your" in content and "executor" in content:
-                    return "EXECUTOR_NAME"
                 if "relationship to you" in content:
                     return "EXECUTOR_RELATIONSHIP"
+
+                # 2. PRINCIPAL FULL NAME
+                if "legal name" in content or "tell me your full name" in content or "what is your full name" in content or "your name" in content:
+                    return "NAME"
+
+                # 3. RESIDENTIAL ADDRESS
+                if "residential" in content or "home address" in content or "where do you live" in content:
+                    return "ADDRESS"
+
+                # 4. ASSET JURISDICTION
+                if "worldwide assets" in content or "strictly domestic" in content or "country of residence" in content:
+                    return "WORLDWIDE"
+
+                # 5. CHILDREN
+                if "names of your children" in content or "names of your child" in content:
+                    return "CHILDREN_NAMES"
+                if "have any children" in content or "do you have children" in content:
+                    return "CHILDREN_STATUS"
+
+                # 6. GIFTS & WISHES
                 if "specific gifts" in content or "bequests" in content:
                     return "GIFTS"
                 if "additional personal wishes" in content or "additional wishes" in content or "funeral arrangements" in content:
@@ -188,7 +202,22 @@ class MockLLMProvider(BaseLLMProvider):
     def _extract_name(
         self, text: str, current_state: PersonalWishesState, last_topic: Optional[str]
     ) -> Optional[str]:
-        # Explicit patterns
+        # STRICT GUARD 1: If current turn is about EXECUTOR, NEVER extract principal full_name!
+        if last_topic in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP"]:
+            return None
+
+        # STRICT GUARD 2: If current_state.full_name is already confirmed, ONLY allow explicit corrections!
+        if current_state.full_name is not None and len(current_state.full_name.strip()) > 0:
+            match_correction = re.search(
+                r"(?:actually|please)?\s*(?:change my name to|update my name to|my name is actually)\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.|$))",
+                text,
+                re.IGNORECASE
+            )
+            if match_correction:
+                return self._clean_name(match_correction.group(1).strip())
+            return None
+
+        # Explicit name declaration patterns (for initial intake)
         patterns = [
             r"(?:actually|please)?\s*(?:change my name to|update my name to)\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.|$))",
             r"(?:my name is|i am|i'm|this is)\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.|$))",
@@ -197,17 +226,17 @@ class MockLLMProvider(BaseLLMProvider):
             m = re.search(pat, text, re.IGNORECASE)
             if m:
                 cand = m.group(1).strip()
+                # Exclude verb phrases like "i am choosing...", "i am appointing..."
+                if re.search(r"\b(choosing|appointing|leaving|giving|want|wishing)\b", cand, re.IGNORECASE):
+                    continue
                 cand = self._clean_name(cand)
                 if cand:
                     return cand
 
-        # Contextual: Assistant specifically asked for user's full name
+        # Contextual: Assistant asked for user's full name
         if (last_topic == "NAME" or (not current_state.full_name and len(current_state.get_missing_fields()) >= 5)):
-            # If the user did not give a multi-field sentence starting with address or something else
             clean_text = text.strip()
-            # Strip conversational fillers
             clean_text = re.sub(r"^(?:hello|hi|hey|sure|it is|it's|my name is|i am|i'm)\s+", "", clean_text, flags=re.IGNORECASE).strip()
-            # If user provided a sentence like "Carlos Martinez, living at 14 Rue de la Paix"
             if re.search(r"\s+(?:living|residing|live|at)\s+", clean_text, re.IGNORECASE):
                 cand = re.split(r"\s+(?:living|residing|live|at)\b", clean_text, flags=re.IGNORECASE)[0].strip().rstrip(",")
             else:
@@ -393,14 +422,15 @@ class MockLLMProvider(BaseLLMProvider):
                     break
 
         # If assistant previously asked specifically for the name ("What is the full name of your [relationship]?")
-        if last_topic == "EXECUTOR_NAME" and not name:
-            clean = re.sub(r"^(?:his name is|her name is|their name is|it is|it's|name is)\s+", "", text.strip(), flags=re.IGNORECASE).rstrip(".,")
-            if len(clean) >= 2:
+        if last_topic == "EXECUTOR_NAME":
+            clean = re.sub(r"^(?:his name is|her name is|their name is|it is|it's|name is|i choose|appoint)\s+", "", text.strip(), flags=re.IGNORECASE).rstrip(".,")
+            if len(clean) >= 2 and not re.search(r"\b(yes|no|none|cancel)\b", clean, re.IGNORECASE):
                 name = clean
 
         # If assistant previously asked specifically for relationship ("What is [name]'s relationship to you?")
-        if last_topic == "EXECUTOR_RELATIONSHIP" and not relationship:
+        if last_topic == "EXECUTOR_RELATIONSHIP":
             clean_rel = text.strip().lower().rstrip(".,")
+            clean_rel = re.sub(r"^(?:he is my|she is my|they are my|is my|my)\s+", "", clean_rel, flags=re.IGNORECASE).strip()
             for r in self.RELATIONSHIPS:
                 if r in clean_rel:
                     relationship = r
@@ -410,9 +440,9 @@ class MockLLMProvider(BaseLLMProvider):
 
         # Contextual direct answer to "Who would you like to appoint as your Executor...?"
         if last_topic == "EXECUTOR_ALL" and not name and not relationship:
-            # If user just typed "James Smith" without relationship
-            if len(text.strip().split()) >= 2:
-                name = text.strip().rstrip(".,")
+            clean = re.sub(r"^(?:i want to appoint|i want|i appoint|appoint|my executor is|it is|it's)\s+", "", text.strip(), flags=re.IGNORECASE).rstrip(".,")
+            if len(clean) >= 2 and not re.search(r"\b(yes|no|none|cancel)\b", clean, re.IGNORECASE):
+                name = clean
 
         # Check existing executor values for merging
         existing_name = current_state.executor.name if current_state.executor else None
