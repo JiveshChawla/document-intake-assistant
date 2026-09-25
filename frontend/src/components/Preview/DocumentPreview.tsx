@@ -1,14 +1,21 @@
 import React, { useState } from 'react';
-import { Copy, Printer, Check, FileCode, FileText } from 'lucide-react';
+import { Copy, Printer, Check, FileCode, FileText, Sparkles, CheckCircle2 } from 'lucide-react';
 
 interface DocumentPreviewProps {
   html: string;
   markdown: string;
+  completionPercentage: number;
 }
 
-export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ html, markdown }) => {
+export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
+  html,
+  markdown,
+  completionPercentage,
+}) => {
   const [viewMode, setViewMode] = useState<'formatted' | 'markdown'>('formatted');
   const [copied, setCopied] = useState(false);
+
+  const isComplete = completionPercentage === 100;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(markdown);
@@ -21,14 +28,14 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ html, markdown
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-100">
+    <div className="flex flex-col h-full bg-slate-100/70 overflow-hidden">
       {/* Action Toolbar */}
-      <div className="px-5 py-2.5 bg-white border-b border-slate-200 flex items-center justify-between no-print">
+      <div className="px-6 py-2.5 bg-white border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 no-print shadow-xs z-10">
         {/* Toggle Mode */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80 text-xs">
           <button
             onClick={() => setViewMode('formatted')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
               viewMode === 'formatted'
                 ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-500 hover:text-slate-900'
@@ -39,7 +46,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ html, markdown
           </button>
           <button
             onClick={() => setViewMode('markdown')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
               viewMode === 'markdown'
                 ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-500 hover:text-slate-900'
@@ -54,8 +61,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ html, markdown
         <div className="flex items-center gap-2 text-xs">
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
-            title="Copy Markdown text"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors"
+            title="Copy draft markdown to clipboard"
           >
             {copied ? (
               <>
@@ -72,8 +79,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ html, markdown
 
           <button
             onClick={handlePrint}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 transition-colors"
-            title="Print or save as PDF"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-brand-600 shadow-xs transition-colors"
+            title="Print or export as PDF"
           >
             <Printer className="h-3.5 w-3.5" />
             <span>Print / PDF</span>
@@ -81,16 +88,32 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ html, markdown
         </div>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-6 flex justify-center">
+      {/* Celebratory Banner when 100% Completed */}
+      {isComplete && (
+        <div className="no-print bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white px-6 py-2.5 text-xs font-medium flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 animate-spin-slow text-emerald-100 flex-shrink-0" />
+            <span>
+              <strong>Draft Ready:</strong> All required interview questions are answered. Document is ready for review and signing.
+            </span>
+          </div>
+          <div className="hidden sm:flex items-center gap-1 bg-white/20 backdrop-blur-xs px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+            <CheckCircle2 className="h-3 w-3" />
+            <span>100% Validated</span>
+          </div>
+        </div>
+      )}
+
+      {/* Document Viewport Area */}
+      <div className="flex-1 overflow-y-auto p-6 md:p-8 flex justify-center">
         <div className="w-full max-w-3xl">
           {viewMode === 'formatted' ? (
             <div
-              className="legal-document-container"
+              className="legal-document"
               dangerouslySetInnerHTML={{ __html: html }}
             />
           ) : (
-            <div className="bg-slate-900 text-slate-100 p-6 rounded-lg font-mono text-xs whitespace-pre-wrap leading-relaxed shadow-sm border border-slate-800 overflow-x-auto">
+            <div className="bg-slate-950 text-slate-200 p-6 rounded-2xl font-mono text-xs whitespace-pre-wrap leading-relaxed shadow-paper border border-slate-800 overflow-x-auto">
               {markdown}
             </div>
           )}

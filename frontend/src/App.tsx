@@ -43,7 +43,11 @@ export function App() {
         if (!prev) return null;
         return {
           ...prev,
-          messages: [...prev.messages, { id: 'temp-u', role: 'user', content: text, timestamp: new Date().toISOString() }, res.message],
+          messages: [
+            ...prev.messages,
+            { id: `u-${Date.now()}`, role: 'user', content: text, timestamp: new Date().toISOString() },
+            res.message,
+          ],
           state: res.state,
           document_markdown: res.document_markdown,
           document_html: res.document_html,
@@ -52,7 +56,7 @@ export function App() {
           active_provider: res.active_provider,
         };
       });
-      // Refresh cleanly
+      // Synchronize cleanly
       const refreshed = await api.getSession();
       setSession(refreshed);
     } catch (err: any) {
@@ -81,16 +85,18 @@ export function App() {
       const res = await api.updateStateDirectly(newState);
       setSession(res);
     } catch (err: any) {
-      throw new Error(err.message || 'Validation failed for direct state edit.');
+      const errMsg = err.message || 'Validation failed for direct state edit.';
+      setError(errMsg);
+      throw new Error(errMsg);
     }
   };
 
   if (isLoading && !session) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
-        <div className="h-10 w-10 border-4 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-slate-600 font-medium text-sm">
-          Initializing Document Intake Assistant...
+        <div className="h-10 w-10 border-3 border-brand-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-slate-600 font-medium text-xs tracking-tight">
+          Connecting to Document Intake Assistant...
         </p>
       </div>
     );
@@ -99,16 +105,16 @@ export function App() {
   if (error && !session) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
-        <div className="h-14 w-14 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4">
-          <AlertCircle className="h-7 w-7" />
+        <div className="h-12 w-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center mb-4 shadow-xs">
+          <AlertCircle className="h-6 w-6" />
         </div>
-        <h2 className="text-xl font-bold text-slate-800 mb-2">Backend Connection Error</h2>
-        <p className="text-slate-600 text-sm max-w-md mb-6">{error}</p>
+        <h2 className="text-lg font-bold text-slate-900 mb-1">Backend Connection Error</h2>
+        <p className="text-slate-600 text-xs max-w-md mb-5 leading-relaxed">{error}</p>
         <button
           onClick={loadSession}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-brand-600 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold hover:bg-brand-600 transition-colors shadow-xs"
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className="h-3.5 w-3.5" />
           <span>Retry Connection</span>
         </button>
       </div>
@@ -116,7 +122,7 @@ export function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-100 overflow-hidden">
+    <div className="h-screen flex flex-col bg-slate-100 overflow-hidden font-sans">
       {/* Top Header */}
       <Header
         activeProvider={session?.active_provider || 'mock'}
@@ -128,14 +134,14 @@ export function App() {
 
       {/* Global Error Banner */}
       {error && (
-        <div className="bg-red-50 border-b border-red-200 px-6 py-2 text-xs text-red-700 flex items-center justify-between">
+        <div className="bg-red-50 border-b border-red-200 px-6 py-2.5 text-xs text-red-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
             <span>{error}</span>
           </div>
           <button
             onClick={() => setError(null)}
-            className="text-xs font-semibold text-red-800 hover:underline"
+            className="text-xs font-semibold text-red-700 hover:text-red-900 hover:underline"
           >
             Dismiss
           </button>
@@ -143,27 +149,28 @@ export function App() {
       )}
 
       {/* Split-screen Main Layout */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
-        {/* Left Side: Interactive Conversational Interview (5 cols on lg) */}
-        <div className="lg:col-span-5 h-full overflow-hidden">
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+        {/* Left Side: Interactive Conversational Interview (5 cols on lg, approx 42%) */}
+        <section className="lg:col-span-5 h-full overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-200/80">
           <ChatContainer
             messages={session?.messages || []}
             onSendMessage={handleSendMessage}
             isLoading={isSending}
           />
-        </div>
+        </section>
 
-        {/* Right Side: Live Preview (Document & Structured State) (7 cols on lg) */}
-        <div className="lg:col-span-7 h-full overflow-hidden">
+        {/* Right Side: Tabbed Workspace (Draft, State JSON, Intake Completeness) (7 cols on lg, approx 58%) */}
+        <section className="lg:col-span-7 h-full overflow-hidden">
           <PreviewContainer
             state={session?.state || ({} as PersonalWishesState)}
             documentMarkdown={session?.document_markdown || ''}
             documentHtml={session?.document_html || ''}
             completionPercentage={session?.completion_percentage || 0}
             onOpenEditModal={() => setIsEditModalOpen(true)}
+            onSaveStateDirectly={handleSaveStateDirectly}
           />
-        </div>
-      </div>
+        </section>
+      </main>
 
       {/* Manual State Override / Inspector Modal */}
       {session && (

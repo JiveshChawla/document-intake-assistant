@@ -43,26 +43,26 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
 
   return (
     <form onSubmit={handleSubmit} className="relative mt-2">
-      <div className="flex items-end gap-2 bg-white rounded-xl border border-slate-300 p-2 shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-100 transition-all">
+      <div className="flex items-end gap-2 bg-white rounded-2xl border border-slate-200 p-2 shadow-xs focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/10 transition-all">
         <textarea
           ref={textareaRef}
           rows={1}
           value={text}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="Type your response or update here... (Press Enter to send)"
+          placeholder="Answer or provide details (e.g., name, address, executor)..."
           disabled={isLoading}
-          className="flex-1 max-h-32 resize-none border-0 bg-transparent px-2 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0 disabled:opacity-50"
+          className="flex-1 max-h-32 resize-none border-0 bg-transparent px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0 disabled:opacity-50"
         />
 
         <button
           type="submit"
           disabled={!text.trim() || isLoading}
-          className="h-9 w-9 rounded-lg bg-slate-900 text-white flex items-center justify-center hover:bg-brand-600 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed transition-all flex-shrink-0"
+          className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center hover:bg-brand-600 disabled:bg-slate-100 disabled:text-slate-300 disabled:cursor-not-allowed transition-all flex-shrink-0 shadow-xs"
           title="Send message"
         >
           {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
           ) : (
             <Send className="h-4 w-4" />
           )}
@@ -70,9 +70,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
       </div>
 
       <div className="flex justify-between items-center px-1 mt-1.5 text-[11px] text-slate-400">
-        <span>Use shift+return for new lines</span>
+        <span>Press <kbd className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[10px] text-slate-500 border border-slate-200">Shift</kbd> + <kbd className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[10px] text-slate-500 border border-slate-200">Enter</kbd> for newline</span>
         <span className="flex items-center gap-1">
-          <CornerDownLeft className="h-3 w-3" /> return to send
+          <CornerDownLeft className="h-3 w-3 text-slate-400" /> Enter to send
         </span>
       </div>
     </form>
