@@ -97,8 +97,17 @@ CRITICAL GUIDELINES:
 - **Why It Was Questioned:** The regex pattern `have children` was matched inside `"don't have children"` because the negative check searched for `"don't have any children"`.
 - **Correction Made:** Updated the negative regex to make `any` optional `r"\b(don't have (?:any )?children)\b"` and added negative lookbehinds on positive patterns.
 
+### Case D: Rigid Street Keywords Failing International Addresses
+- **User Feedback / Test:** Users typing addresses from non-English countries (e.g. `14 Rue de la Paix, 75002 Paris, France`, `Apartment 4B, Shibuya, Tokyo, Japan`, `Plot 42, Sector 18, Gurgaon, India`) were ignored because address extraction depended on English street markers (`Street`, `Road`, `Ave`, `London`, `New York`).
+- **Correction Made:** Implemented conversational turn awareness (`_get_last_question_topic`). When the assistant asks for the residential address, the user's direct free-text response is captured as their address without artificial geographic or linguistic constraints, supporting addresses from any country worldwide.
+
+### Case E: "Yes" to Children Causing Loops & Ambiguous Name Capture
+- **User Feedback / Test:** Users answering simply `"Yes"` or `"Yes I do"` to `"Do you have any children?"` were ignored because the positive matcher required `"have children"`.
+- **Correction Made:** Added direct affirmative recognition for children (`yes`, `yeah`, `yep`, `yes I do`, `sure`). If names are included in the same message (`Yes, Lucas and Emma`), both status and names are parsed in one turn. If only `"Yes"` is provided, `has_children` is marked `True` and the assistant seamlessly asks for children's names.
+
 ---
 
 ## 4. Key Takeaways
-1. **Never rely on the LLM as the database:** LLMs are great reasoning and extraction engines, but horrible databases. Isolating state in a Pydantic schema and only applying validated deltas eliminated state drift and hallucinated data.
-2. **Ambiguity must be explicit:** Making ambiguity a first-class citizen in the response model (`ambiguities: List[str]`) allows both the assistant and the UI to communicate uncertainties clearly to the user.
+1. **Context-Aware Intent Disambiguation:** By tracking the conversational topic of the preceding assistant prompt (`last_topic`), the mock engine can accurately interpret terse user replies (`"Yes"`, `"Worldwide"`, `"Pierre and Sophie"`, `"Flat 4B, Tokyo"`) without requiring users to speak in rigid template sentences.
+2. **Never rely on the LLM as the database:** LLMs are great reasoning and extraction engines, but horrible databases. Isolating state in a Pydantic schema and only applying validated deltas eliminated state drift and hallucinated data.
+3. **Ambiguity must be explicit:** Making ambiguity a first-class citizen in the response model (`ambiguities: List[str]`) allows both the assistant and the UI to communicate uncertainties clearly to the user.

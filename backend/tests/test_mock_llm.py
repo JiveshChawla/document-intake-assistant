@@ -1,5 +1,6 @@
 import pytest
 from app.models.state import PersonalWishesState, ExecutorInfo
+from app.models.chat import ChatMessage
 from app.services.llm.mock_provider import MockLLMProvider
 
 @pytest.fixture
@@ -30,7 +31,6 @@ async def test_ambiguous_executor_flags_warning(mock_llm):
     assert result.proposed_state_updates["executor"]["name"] is None
     assert len(result.ambiguities) > 0
     assert any("name is missing" in amb.lower() for amb in result.ambiguities)
-    # The follow-up question should specifically ask for the brother's name
     assert "name" in result.assistant_message.lower()
 
 @pytest.mark.asyncio
@@ -46,6 +46,95 @@ async def test_correction_executor(mock_llm):
     assert updates.get("executor", {}).get("relationship") == "sister"
 
 @pytest.mark.asyncio
+async def test_universal_international_addresses(mock_llm):
+    """Test custom free-text addresses from various countries worldwide."""
+    history_asking_address = [
+        ChatMessage(role="assistant", content="What is your current residential home address?")
+    ]
+    state = PersonalWishesState(full_name="Carlos Martinez")
+
+    test_addresses = [
+        "14 Rue de la Paix, 75002 Paris, France",
+        "Flat 302, Green Valley Apartments, Bangalore, India 560001",
+        "Apartment 4B, Shibuya 1-chome, Tokyo 150-0002, Japan",
+        "42 Wallaby Way, Sydney NSW 2000, Australia",
+        "Av. Paulista 1000, Bela Vista, São Paulo, Brazil",
+        "Calle 85 # 11-53, Bogotá, Colombia",
+    ]
+
+    for addr in test_addresses:
+        res = await mock_llm.process_turn(addr, history_asking_address, state)
+        assert res.proposed_state_updates.get("home_address") == addr, f"Failed for address: {addr}"
+
+@pytest.mark.asyncio
+async def test_children_yes_handling(mock_llm):
+    """Test answering 'yes' to children status question."""
+    history = [
+        ChatMessage(role="assistant", content="Do you have any children?")
+    ]
+    state = PersonalWishesState(
+        full_name="Jane Doe",
+        home_address="123 High St",
+        covers_worldwide_assets=True
+    )
+
+    # Simple "Yes"
+    res1 = await mock_llm.process_turn("Yes", history, state)
+    assert res1.proposed_state_updates.get("has_children") is True
+    # Should ask for names of children next
+    assert "names of your children" in res1.assistant_message.lower()
+
+    # "Yes" with names in same sentence
+    res2 = await mock_llm.process_turn("Yes, two children: Lucas and Emma", history, state)
+    assert res2.proposed_state_updates.get("has_children") is True
+    assert "Lucas" in res2.proposed_state_updates.get("children", [])
+    assert "Emma" in res2.proposed_state_updates.get("children", [])
+
+@pytest.mark.asyncio
+async def test_standalone_children_names(mock_llm):
+    """Test providing children names in follow-up."""
+    history = [
+        ChatMessage(role="assistant", content="Could you provide the full names of your children?")
+    ]
+    state = PersonalWishesState(
+        full_name="Jane Doe",
+        has_children=True
+    )
+
+    res = await mock_llm.process_turn("Pierre, Sophie, and Lucas", history, state)
+    children = res.proposed_state_updates.get("children", [])
+    assert "Pierre" in children
+    assert "Sophie" in children
+    assert "Lucas" in children
+
+@pytest.mark.asyncio
+async def test_decline_optional_sections_no_loop(mock_llm):
+    """Test that answering 'no' or 'none' to optional gifts/wishes smoothly progresses without looping."""
+    history_gifts = [
+        ChatMessage(role="assistant", content="Do you have any specific gifts or bequests you would like to leave?")
+    ]
+    state_complete_core = PersonalWishesState(
+        full_name="Jane Doe",
+        home_address="123 High St",
+        covers_worldwide_assets=True,
+        has_children=False,
+        executor=ExecutorInfo(name="James Smith", relationship="brother")
+    )
+
+    # Say "No" to gifts
+    res_gifts = await mock_llm.process_turn("No, none at this time", history_gifts, state_complete_core)
+    # Should advance to additional wishes
+    assert "additional personal wishes" in res_gifts.assistant_message.lower()
+
+    history_wishes = [
+        ChatMessage(role="assistant", content="Are there any additional personal wishes or directives you'd like to include?")
+    ]
+    # Say "No" to wishes
+    res_wishes = await mock_llm.process_turn("No, that is all", history_wishes, state_complete_core)
+    # Should complete without getting stuck
+    assert "captured" in res_wishes.assistant_message.lower() or "draft" in res_wishes.assistant_message.lower()
+
+@pytest.mark.asyncio
 async def test_triggered_fixture_valid(mock_llm):
     result = await mock_llm.process_turn("[FIXTURE_VALID]", [], PersonalWishesState())
     assert result.proposed_state_updates["full_name"] == "Jane Doe"
@@ -58,7 +147,6 @@ async def test_triggered_fixture_ambiguous(mock_llm):
 
 @pytest.mark.asyncio
 async def test_intelligent_follow_up_progression(mock_llm):
-    # When full_name is already provided, assistant asks for address
     state = PersonalWishesState(full_name="Arthur Dent")
     result = await mock_llm.process_turn("Hello again", [], state)
     assert "address" in result.assistant_message.lower()
