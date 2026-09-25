@@ -43,26 +43,26 @@ export const StateEditModal: React.FC<StateEditModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[85vh] border border-slate-200 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[85vh] border border-slate-200 dark:border-slate-800 overflow-hidden transition-colors">
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-slate-200/80 flex items-center justify-between bg-slate-50/80">
+        <div className="px-6 py-4 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-850">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-slate-900 text-white">
+            <div className="p-2 rounded-xl bg-slate-900 dark:bg-brand-600 text-white shadow-xs">
               <Code2 className="h-4 w-4" />
             </div>
             <div>
-              <h3 className="font-semibold text-slate-900 text-sm">
+              <h3 className="font-bold text-slate-900 dark:text-white text-sm">
                 Raw Structured State Editor
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Directly edit JSON state. All updates validate against backend Pydantic models.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
@@ -71,7 +71,7 @@ export const StateEditModal: React.FC<StateEditModalProps> = ({
         {/* Modal Body */}
         <div className="p-6 flex-1 overflow-y-auto">
           {error && (
-            <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+            <div className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs flex items-center gap-2">
               <AlertCircle className="h-4 w-4 flex-shrink-0" />
               <span>{error}</span>
             </div>
@@ -81,23 +81,23 @@ export const StateEditModal: React.FC<StateEditModalProps> = ({
             value={jsonText}
             onChange={(e) => setJsonText(e.target.value)}
             rows={16}
-            className="w-full font-mono text-xs p-4 bg-slate-950 text-emerald-300 rounded-xl border border-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/30 leading-relaxed shadow-inner"
+            className="w-full font-mono text-xs p-4 bg-slate-950 text-emerald-400 rounded-xl border border-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/30 leading-relaxed shadow-inner selection:bg-brand-800"
             spellCheck={false}
           />
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200/80 flex items-center justify-end gap-2.5">
+        <div className="px-6 py-3.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+            className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-brand-600 rounded-lg shadow-xs transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-slate-900 dark:bg-brand-600 hover:bg-brand-600 dark:hover:bg-brand-500 rounded-xl shadow-xs transition-colors disabled:opacity-50"
           >
             <Check className="h-3.5 w-3.5" />
             <span>{isSaving ? 'Validating...' : 'Apply & Sync State'}</span>

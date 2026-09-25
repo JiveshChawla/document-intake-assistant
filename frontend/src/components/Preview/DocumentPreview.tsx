@@ -28,31 +28,31 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-100/70 overflow-hidden">
+    <div className="flex flex-col h-full bg-slate-100/70 dark:bg-slate-950 overflow-hidden transition-colors duration-200">
       {/* Action Toolbar */}
-      <div className="px-6 py-2.5 bg-white border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 no-print shadow-xs z-10">
+      <div className="px-6 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 no-print shadow-xs z-10 transition-colors">
         {/* Toggle Mode */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80 text-xs">
+        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs">
           <button
             onClick={() => setViewMode('formatted')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
               viewMode === 'formatted'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-500 hover:text-slate-900'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
             }`}
           >
-            <FileText className="h-3.5 w-3.5" />
+            <FileText className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
             <span>Legal Paper View</span>
           </button>
           <button
             onClick={() => setViewMode('markdown')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
               viewMode === 'markdown'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-500 hover:text-slate-900'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
             }`}
           >
-            <FileCode className="h-3.5 w-3.5" />
+            <FileCode className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
             <span>Markdown Source</span>
           </button>
         </div>
@@ -61,17 +61,17 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         <div className="flex items-center gap-2 text-xs">
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/80 shadow-2xs transition-colors"
             title="Copy draft markdown to clipboard"
           >
             {copied ? (
               <>
-                <Check className="h-3.5 w-3.5 text-emerald-600" />
-                <span className="text-emerald-700 font-semibold">Copied!</span>
+                <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-emerald-700 dark:text-emerald-400 font-bold">Copied!</span>
               </>
             ) : (
               <>
-                <Copy className="h-3.5 w-3.5 text-slate-500" />
+                <Copy className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
                 <span>Copy Draft</span>
               </>
             )}
@@ -79,7 +79,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
           <button
             onClick={handlePrint}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-brand-600 shadow-xs transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 dark:bg-brand-600 text-white hover:bg-brand-600 dark:hover:bg-brand-500 shadow-xs font-semibold transition-colors"
             title="Print or export as PDF"
           >
             <Printer className="h-3.5 w-3.5" />
@@ -90,14 +90,14 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
       {/* Celebratory Banner when 100% Completed */}
       {isComplete && (
-        <div className="no-print bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white px-6 py-2.5 text-xs font-medium flex items-center justify-between shadow-sm">
+        <div className="no-print bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-600 text-white px-6 py-2.5 text-xs font-medium flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 animate-spin-slow text-emerald-100 flex-shrink-0" />
             <span>
               <strong>Draft Ready:</strong> All required interview questions are answered. Document is ready for review and signing.
             </span>
           </div>
-          <div className="hidden sm:flex items-center gap-1 bg-white/20 backdrop-blur-xs px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+          <div className="hidden sm:flex items-center gap-1 bg-white/20 backdrop-blur-xs px-2.5 py-0.5 rounded-full text-[11px] font-bold">
             <CheckCircle2 className="h-3 w-3" />
             <span>100% Validated</span>
           </div>
@@ -113,7 +113,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               dangerouslySetInnerHTML={{ __html: html }}
             />
           ) : (
-            <div className="bg-slate-950 text-slate-200 p-6 rounded-2xl font-mono text-xs whitespace-pre-wrap leading-relaxed shadow-paper border border-slate-800 overflow-x-auto">
+            <div className="bg-slate-950 text-slate-200 p-6 rounded-2xl font-mono text-xs whitespace-pre-wrap leading-relaxed shadow-paper-dark border border-slate-800 overflow-x-auto selection:bg-brand-800">
               {markdown}
             </div>
           )}

@@ -13,8 +13,8 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({ message }) => {
   if (isSystem) {
     return (
       <div className="flex items-center justify-center my-3">
-        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100/80 text-slate-500 text-xs border border-slate-200/60 font-medium">
-          <Info className="h-3 w-3 text-slate-400" />
+        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100/90 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs border border-slate-200/70 dark:border-slate-700 font-medium">
+          <Info className="h-3 w-3 text-slate-400 dark:text-slate-500" />
           <span>{message.content}</span>
         </div>
       </div>
@@ -27,8 +27,8 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({ message }) => {
       <div
         className={`h-8 w-8 rounded-xl flex items-center justify-center flex-shrink-0 text-white shadow-xs transition-transform ${
           isUser
-            ? 'bg-slate-900'
-            : 'bg-gradient-to-tr from-brand-600 to-indigo-600 ring-1 ring-brand-700/20'
+            ? 'bg-gradient-to-tr from-slate-900 to-slate-750 dark:from-brand-600 dark:to-indigo-600 ring-1 ring-white/10'
+            : 'bg-gradient-to-tr from-brand-600 via-indigo-600 to-violet-600 ring-1 ring-white/20'
         }`}
       >
         {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
@@ -39,21 +39,21 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({ message }) => {
         <div
           className={`px-4 py-3 rounded-2xl text-sm leading-relaxed transition-all ${
             isUser
-              ? 'bg-slate-900 text-white rounded-tr-xs shadow-xs'
-              : 'bg-white text-slate-800 border border-slate-200/90 rounded-tl-xs shadow-xs'
+              ? 'bg-slate-900 dark:bg-gradient-to-r dark:from-brand-600 dark:to-indigo-600 text-white rounded-tr-xs shadow-xs'
+              : 'bg-white dark:bg-slate-900 text-slate-850 dark:text-slate-100 border border-slate-200/90 dark:border-slate-800 rounded-tl-xs shadow-xs'
           }`}
         >
           <div className="whitespace-pre-wrap">{message.content}</div>
 
           {/* Extracted fields indicator badge */}
           {message.extracted_fields && message.extracted_fields.length > 0 && (
-            <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5 text-xs text-emerald-700">
-              <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-emerald-600" />
-              <span className="font-semibold text-[11px] text-slate-600">Updated:</span>
+            <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <span className="font-semibold text-[11px] text-slate-600 dark:text-slate-400">Updated:</span>
               {message.extracted_fields.map((f) => (
                 <span
                   key={f}
-                  className="bg-emerald-50 text-emerald-800 border border-emerald-200/80 px-1.5 py-0.5 rounded-md text-[11px] font-mono font-medium"
+                  className="bg-emerald-50 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 px-1.5 py-0.5 rounded-md text-[11px] font-mono font-semibold"
                 >
                   {f}
                 </span>
@@ -63,12 +63,12 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({ message }) => {
 
           {/* Ambiguity / Follow-up banner */}
           {message.ambiguities && message.ambiguities.length > 0 && (
-            <div className="mt-2.5 pt-2 border-t border-amber-100 flex flex-col gap-1 text-xs text-amber-900 bg-amber-50/80 p-2.5 rounded-xl border border-amber-200">
-              <div className="flex items-center gap-1.5 font-semibold text-[11px] text-amber-900">
-                <AlertTriangle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
+            <div className="mt-2.5 pt-2 border-t border-amber-100 dark:border-amber-900/50 flex flex-col gap-1 text-xs text-amber-900 dark:text-amber-200 bg-amber-50/80 dark:bg-amber-950/60 p-2.5 rounded-xl border border-amber-200 dark:border-amber-800">
+              <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-900 dark:text-amber-200">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                 <span>Clarification Needed:</span>
               </div>
-              <ul className="list-disc pl-4 text-[11px] text-amber-800 space-y-0.5">
+              <ul className="list-disc pl-4 text-[11px] text-amber-800 dark:text-amber-300 space-y-0.5">
                 {message.ambiguities.map((amb, i) => (
                   <li key={i}>{amb}</li>
                 ))}
@@ -78,7 +78,7 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({ message }) => {
         </div>
 
         {/* Timestamp */}
-        <span className="text-[10px] text-slate-400 mt-1 px-1">
+        <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 px-1">
           {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </span>
       </div>

@@ -93,9 +93,9 @@ export function App() {
 
   if (isLoading && !session) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 gap-4 transition-colors">
         <div className="h-10 w-10 border-3 border-brand-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-slate-600 font-medium text-xs tracking-tight">
+        <p className="text-slate-600 dark:text-slate-400 font-semibold text-xs tracking-tight">
           Connecting to Document Intake Assistant...
         </p>
       </div>
@@ -104,15 +104,15 @@ export function App() {
 
   if (error && !session) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
-        <div className="h-12 w-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center mb-4 shadow-xs">
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 text-center transition-colors">
+        <div className="h-12 w-12 rounded-2xl bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400 flex items-center justify-center mb-4 shadow-xs">
           <AlertCircle className="h-6 w-6" />
         </div>
-        <h2 className="text-lg font-bold text-slate-900 mb-1">Backend Connection Error</h2>
-        <p className="text-slate-600 text-xs max-w-md mb-5 leading-relaxed">{error}</p>
+        <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Backend Connection Error</h2>
+        <p className="text-slate-600 dark:text-slate-400 text-xs max-w-md mb-5 leading-relaxed">{error}</p>
         <button
           onClick={loadSession}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold hover:bg-brand-600 transition-colors shadow-xs"
+          className="flex items-center gap-2 px-4 py-2 bg-slate-900 dark:bg-brand-600 text-white rounded-xl text-xs font-semibold hover:bg-brand-600 dark:hover:bg-brand-500 transition-colors shadow-xs"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           <span>Retry Connection</span>
@@ -122,7 +122,7 @@ export function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-100 overflow-hidden font-sans">
+    <div className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200">
       {/* Top Header */}
       <Header
         activeProvider={session?.active_provider || 'mock'}
@@ -134,14 +134,14 @@ export function App() {
 
       {/* Global Error Banner */}
       {error && (
-        <div className="bg-red-50 border-b border-red-200 px-6 py-2.5 text-xs text-red-800 flex items-center justify-between">
+        <div className="bg-red-50 dark:bg-red-950/80 border-b border-red-200 dark:border-red-900 px-6 py-2.5 text-xs text-red-800 dark:text-red-300 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+            <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0" />
             <span>{error}</span>
           </div>
           <button
             onClick={() => setError(null)}
-            className="text-xs font-semibold text-red-700 hover:text-red-900 hover:underline"
+            className="text-xs font-bold text-red-700 dark:text-red-400 hover:underline"
           >
             Dismiss
           </button>
@@ -151,7 +151,7 @@ export function App() {
       {/* Split-screen Main Layout */}
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
         {/* Left Side: Interactive Conversational Interview (5 cols on lg, approx 42%) */}
-        <section className="lg:col-span-5 h-full overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-200/80">
+        <section className="lg:col-span-5 h-full overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-200/80 dark:border-slate-800">
           <ChatContainer
             messages={session?.messages || []}
             onSendMessage={handleSendMessage}
@@ -159,7 +159,12 @@ export function App() {
           />
         </section>
 
-        {/* Right Side: Tabbed Workspace (Draft, State JSON, Intake Completeness) (7 cols on lg, approx 58%) */}
+        {/* Right Side: Tabbed Workspace (7 cols on lg, approx 58%)
+            Sequence:
+            1. Intake Completeness & Edit
+            2. Live Document Draft
+            3. Structured JSON State
+        */}
         <section className="lg:col-span-7 h-full overflow-hidden">
           <PreviewContainer
             state={session?.state || ({} as PersonalWishesState)}

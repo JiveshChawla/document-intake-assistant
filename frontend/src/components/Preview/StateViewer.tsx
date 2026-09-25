@@ -18,12 +18,12 @@ export const StateViewer: React.FC<StateViewerProps> = ({ state, onOpenEditModal
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden">
+    <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
       {/* Top Banner explaining state separation */}
-      <div className="px-6 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between shadow-xs">
+      <div className="px-6 py-3 bg-slate-900/90 border-b border-slate-800/90 flex items-center justify-between shadow-xs">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-emerald-400" />
-          <span className="text-xs font-semibold text-slate-200">
+          <span className="text-xs font-bold text-slate-200 tracking-tight">
             Structured State (Single Source of Truth)
           </span>
         </div>
@@ -31,21 +31,21 @@ export const StateViewer: React.FC<StateViewerProps> = ({ state, onOpenEditModal
         <div className="flex items-center gap-2">
           <button
             onClick={onOpenEditModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition-colors shadow-2xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition-colors shadow-2xs"
             title="Open modal to directly edit full JSON"
           >
-            <Edit3 className="h-3.5 w-3.5 text-slate-400" />
+            <Edit3 className="h-3.5 w-3.5 text-brand-400" />
             <span>Raw JSON Editor</span>
           </button>
 
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition-colors shadow-2xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition-colors shadow-2xs"
           >
             {copied ? (
               <>
                 <Check className="h-3.5 w-3.5 text-emerald-400" />
-                <span className="text-emerald-400 font-semibold">Copied</span>
+                <span className="text-emerald-400 font-bold">Copied</span>
               </>
             ) : (
               <>
@@ -57,16 +57,16 @@ export const StateViewer: React.FC<StateViewerProps> = ({ state, onOpenEditModal
         </div>
       </div>
 
-      <div className="p-3 bg-slate-900/60 border-b border-slate-800/80 text-[11px] text-slate-400 flex items-center gap-2 px-6">
+      <div className="p-3 bg-slate-900/50 border-b border-slate-800/80 text-[11px] text-slate-400 flex items-center gap-2 px-6">
         <Code className="h-3.5 w-3.5 text-brand-400 flex-shrink-0" />
         <span>
           Strictly decoupled from conversation transcript. State transitions validated by Pydantic models on every mutation.
         </span>
       </div>
 
-      {/* JSON Viewer */}
-      <div className="flex-1 overflow-auto p-6 font-mono text-xs leading-relaxed">
-        <pre className="text-emerald-300 font-mono selection:bg-emerald-900 selection:text-white">
+      {/* JSON Viewer with vibrant syntax styling */}
+      <div className="flex-1 overflow-auto p-6 font-mono text-xs leading-relaxed selection:bg-brand-800 selection:text-white">
+        <pre className="text-emerald-400 font-mono">
           {jsonString}
         </pre>
       </div>

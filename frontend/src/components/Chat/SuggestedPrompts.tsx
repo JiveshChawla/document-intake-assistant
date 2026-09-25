@@ -41,14 +41,14 @@ export const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({
         <button
           type="button"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 hover:text-slate-800 transition-colors"
+          className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
         >
           <Sparkles className="h-3 w-3 text-amber-500" />
           <span>Quick Test Prompts</span>
           {isExpanded ? (
-            <ChevronUp className="h-3 w-3 text-slate-400" />
+            <ChevronUp className="h-3 w-3 text-slate-400 dark:text-slate-500" />
           ) : (
-            <ChevronDown className="h-3 w-3 text-slate-400" />
+            <ChevronDown className="h-3 w-3 text-slate-400 dark:text-slate-500" />
           )}
         </button>
       </div>
@@ -61,14 +61,14 @@ export const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({
               type="button"
               disabled={isLoading}
               onClick={() => onSelectPrompt(sample.prompt)}
-              className="group text-left text-xs bg-slate-50 hover:bg-white hover:border-brand-300 border border-slate-200/80 text-slate-700 rounded-lg px-2.5 py-1.5 transition-all shadow-2xs hover:shadow-xs disabled:opacity-40"
+              className="group text-left text-xs bg-slate-50 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-800 hover:border-brand-400 dark:hover:border-brand-500 border border-slate-200/80 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl px-2.5 py-1.5 transition-all shadow-2xs hover:shadow-xs disabled:opacity-40"
               title={sample.prompt}
             >
               <div className="flex items-center gap-1.5">
-                <span className="font-medium text-slate-800 group-hover:text-brand-700">
+                <span className="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-brand-600 dark:group-hover:text-brand-400">
                   {sample.label}
                 </span>
-                <span className="text-[10px] text-slate-400 group-hover:text-brand-500 font-mono">
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 group-hover:text-brand-500 font-mono">
                   ({sample.badge})
                 </span>
               </div>
