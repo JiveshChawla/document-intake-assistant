@@ -43,28 +43,31 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Center/Right Status & Controls */}
+        {/* Center/Right Status & Controls
+            Exact requested order:
+            [ LLM Badge ] [ Progress Badge ] [ Inspect JSON ] [ Reset ] [ Light/Dark Mode Toggle ]
+        */}
         <div className="flex items-center gap-2.5">
-          {/* Active Provider Pill */}
-          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-100/80 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300">
+          {/* 1. LLM Badge */}
+          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 shadow-2xs">
             <Cpu className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
-            <span className="text-slate-400 dark:text-slate-500">LLM:</span>
+            <span className="text-slate-400 dark:text-slate-500 font-medium">LLM:</span>
             <span className="font-semibold text-slate-800 dark:text-slate-200 capitalize">
               {activeProvider === 'mock' ? 'Mock Provider' : activeProvider}
             </span>
           </div>
 
-          {/* Intake Completeness Pill */}
+          {/* 2. Progress Badge */}
           <div
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all duration-300 shadow-2xs ${
               isComplete
-                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 shadow-glow-emerald'
-                : 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-600 shadow-glow-emerald'
+                : 'bg-amber-50 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
             }`}
           >
             {isComplete ? (
               <>
-                <Sparkles className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                <Sparkles className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 animate-spin-slow" />
                 <span className="tracking-tight">Draft Ready (100%)</span>
               </>
             ) : (
@@ -75,10 +78,31 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* Theme Toggle Button (Light / Dark) */}
+          {/* 3. Inspect JSON Button */}
+          <button
+            onClick={onOpenStateEditor}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-950/50 hover:text-brand-700 dark:hover:text-brand-300 hover:border-brand-300 dark:hover:border-brand-700 border border-slate-200 dark:border-slate-700 shadow-xs hover:shadow-sm transition-all duration-150"
+            title="Inspect or manually edit structured JSON state"
+          >
+            <Code2 className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
+            <span className="hidden sm:inline">Inspect JSON</span>
+          </button>
+
+          {/* 4. Reset Button */}
+          <button
+            onClick={onReset}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:border-red-200 dark:hover:border-red-900 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 transition-all duration-150 disabled:opacity-50 shadow-xs"
+            title="Reset interview conversation and state"
+          >
+            <RotateCcw className="h-3.5 w-3.5 text-slate-400 group-hover:text-red-600" />
+            <span className="hidden sm:inline">Reset</span>
+          </button>
+
+          {/* 5. Light/Dark Mode Toggle (at the very end after Reset) */}
           <button
             onClick={toggleTheme}
-            className="flex items-center justify-center p-2 rounded-xl text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all duration-200 shadow-xs"
+            className="flex items-center justify-center p-2 rounded-xl text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-slate-700 hover:text-brand-600 dark:hover:text-amber-400 border border-slate-200 dark:border-slate-700 transition-all duration-200 shadow-xs hover:shadow-sm hover:scale-105 active:scale-95"
             title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}
             aria-label="Toggle theme"
           >
@@ -87,27 +111,6 @@ export const Header: React.FC<HeaderProps> = ({
             ) : (
               <Sun className="h-4 w-4 text-amber-400 animate-spin-slow" />
             )}
-          </button>
-
-          {/* Direct State Override / Inspector Button */}
-          <button
-            onClick={onOpenStateEditor}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700 shadow-xs transition-colors"
-            title="Inspect or manually edit structured JSON state"
-          >
-            <Code2 className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
-            <span className="hidden sm:inline">Inspect JSON</span>
-          </button>
-
-          {/* Reset Session Button */}
-          <button
-            onClick={onReset}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:border-red-200 dark:hover:border-red-900 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 transition-colors disabled:opacity-50"
-            title="Reset interview conversation and state"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Reset</span>
           </button>
         </div>
       </div>

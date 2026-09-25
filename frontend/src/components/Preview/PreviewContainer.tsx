@@ -22,14 +22,14 @@ export const PreviewContainer: React.FC<PreviewContainerProps> = ({
   onOpenEditModal,
   onSaveStateDirectly,
 }) => {
-  // Requirement: Tab 1 "Intake Completeness & Edit" is first!
+  // Tab 1 "Intake Completeness & Edit" is first and default
   const [activeTab, setActiveTab] = useState<'completeness' | 'document' | 'state'>('completeness');
 
   const isComplete = completionPercentage === 100;
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900 overflow-hidden transition-colors duration-200">
-      {/* Tab Navigation Bar - Reordered per requirement:
+      {/* Tab Navigation Bar - Sequence:
           1. Intake Completeness & Edit (Questions/progress cards first)
           2. Live Document Draft (Legal view second)
           3. Structured JSON State (Raw JSON third)
@@ -39,19 +39,19 @@ export const PreviewContainer: React.FC<PreviewContainerProps> = ({
           {/* Tab 1: Intake Completeness & Edit (FIRST) */}
           <button
             onClick={() => setActiveTab('completeness')}
-            className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition-all ${
+            className={`flex items-center gap-2 py-3 px-3.5 text-xs font-bold border-b-2 transition-all duration-150 ${
               activeTab === 'completeness'
-                ? 'border-brand-600 dark:border-brand-400 text-brand-700 dark:text-brand-300 font-bold'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                ? 'border-brand-600 dark:border-brand-400 text-brand-700 dark:text-brand-300 drop-shadow-2xs'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-700'
             }`}
           >
-            <CheckSquare className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+            <CheckSquare className={`h-4 w-4 ${activeTab === 'completeness' ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400 dark:text-slate-500'}`} />
             <span>Intake Completeness & Edit</span>
             <span
-              className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              className={`px-2 py-0.5 rounded-full text-[10px] font-black transition-colors ${
                 isComplete
-                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                  : 'bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800'
+                  ? 'bg-emerald-500/10 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30'
+                  : 'bg-brand-500/10 dark:bg-brand-950 text-brand-700 dark:text-brand-300 border border-brand-500/30'
               }`}
             >
               {completionPercentage}%
@@ -61,16 +61,16 @@ export const PreviewContainer: React.FC<PreviewContainerProps> = ({
           {/* Tab 2: Live Document Draft (SECOND) */}
           <button
             onClick={() => setActiveTab('document')}
-            className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition-all ${
+            className={`flex items-center gap-2 py-3 px-3.5 text-xs font-bold border-b-2 transition-all duration-150 ${
               activeTab === 'document'
-                ? 'border-brand-600 dark:border-brand-400 text-brand-700 dark:text-brand-300 font-bold'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                ? 'border-brand-600 dark:border-brand-400 text-brand-700 dark:text-brand-300 drop-shadow-2xs'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-700'
             }`}
           >
-            <FileText className="h-4 w-4" />
+            <FileText className={`h-4 w-4 ${activeTab === 'document' ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400 dark:text-slate-500'}`} />
             <span>Live Document Draft</span>
             {isComplete && (
-              <span className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold border border-emerald-300 dark:border-emerald-800">
+              <span className="hidden sm:inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/10 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold border border-emerald-500/30">
                 <Sparkles className="h-2.5 w-2.5 text-emerald-600 dark:text-emerald-400" /> Ready
               </span>
             )}
@@ -79,13 +79,13 @@ export const PreviewContainer: React.FC<PreviewContainerProps> = ({
           {/* Tab 3: Structured JSON State (THIRD) */}
           <button
             onClick={() => setActiveTab('state')}
-            className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition-all ${
+            className={`flex items-center gap-2 py-3 px-3.5 text-xs font-bold border-b-2 transition-all duration-150 ${
               activeTab === 'state'
-                ? 'border-brand-600 dark:border-brand-400 text-brand-700 dark:text-brand-300 font-bold'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                ? 'border-brand-600 dark:border-brand-400 text-brand-700 dark:text-brand-300 drop-shadow-2xs'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-700'
             }`}
           >
-            <Database className="h-4 w-4" />
+            <Database className={`h-4 w-4 ${activeTab === 'state' ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400 dark:text-slate-500'}`} />
             <span>Structured JSON State</span>
           </button>
         </div>

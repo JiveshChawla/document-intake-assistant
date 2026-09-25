@@ -30,15 +30,15 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   return (
     <div className="flex flex-col h-full bg-slate-100/70 dark:bg-slate-950 overflow-hidden transition-colors duration-200">
       {/* Action Toolbar */}
-      <div className="px-6 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 no-print shadow-xs z-10 transition-colors">
+      <div className="px-6 py-2.5 bg-gradient-to-r from-slate-50 via-white to-slate-50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border-b border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 no-print shadow-xs z-10 transition-colors">
         {/* Toggle Mode */}
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs">
+        <div className="flex items-center gap-1 bg-slate-200/60 dark:bg-slate-800 p-1 rounded-xl border border-slate-300/70 dark:border-slate-700/80 text-xs">
           <button
             onClick={() => setViewMode('formatted')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all ${
               viewMode === 'formatted'
-                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                ? 'bg-white dark:bg-slate-900 text-brand-700 dark:text-brand-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
             }`}
           >
             <FileText className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
@@ -46,10 +46,10 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           </button>
           <button
             onClick={() => setViewMode('markdown')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all ${
               viewMode === 'markdown'
-                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                ? 'bg-white dark:bg-slate-900 text-brand-700 dark:text-brand-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
             }`}
           >
             <FileCode className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
@@ -61,7 +61,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         <div className="flex items-center gap-2 text-xs">
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/80 shadow-2xs transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-brand-50 dark:hover:bg-slate-700/80 hover:text-brand-700 dark:hover:text-brand-300 hover:border-brand-300 shadow-2xs font-semibold transition-all"
             title="Copy draft markdown to clipboard"
           >
             {copied ? (
@@ -79,7 +79,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
           <button
             onClick={handlePrint}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 dark:bg-brand-600 text-white hover:bg-brand-600 dark:hover:bg-brand-500 shadow-xs font-semibold transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-slate-900 to-brand-900 dark:from-brand-600 dark:to-indigo-600 text-white hover:opacity-95 shadow-xs font-bold transition-all"
             title="Print or export as PDF"
           >
             <Printer className="h-3.5 w-3.5" />
