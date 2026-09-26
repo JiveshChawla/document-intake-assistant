@@ -5,6 +5,7 @@ import { Header } from './components/Header';
 import { ChatContainer } from './components/Chat/ChatContainer';
 import { PreviewContainer } from './components/Preview/PreviewContainer';
 import { StateEditModal } from './components/UI/StateEditModal';
+import { LandingPage } from './components/LandingPage';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 export function App() {
@@ -13,6 +14,20 @@ export function App() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [view, setView] = useState<'landing' | 'app'>(() => {
+    const saved = sessionStorage.getItem('intake_view');
+    return saved === 'app' ? 'app' : 'landing';
+  });
+
+  const handleLaunch = () => {
+    setView('app');
+    sessionStorage.setItem('intake_view', 'app');
+  };
+
+  const handleNavigateHome = () => {
+    setView('landing');
+    sessionStorage.setItem('intake_view', 'landing');
+  };
 
   // Load session on startup
   useEffect(() => {
@@ -91,6 +106,16 @@ export function App() {
     }
   };
 
+  if (view === 'landing') {
+    return (
+      <LandingPage
+        onLaunch={handleLaunch}
+        activeProvider={session?.active_provider}
+        completionPercentage={session?.completion_percentage}
+      />
+    );
+  }
+
   if (isLoading && !session) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 gap-4 transition-colors">
@@ -130,6 +155,7 @@ export function App() {
         onReset={handleReset}
         onOpenStateEditor={() => setIsEditModalOpen(true)}
         isLoading={isSending}
+        onNavigateHome={handleNavigateHome}
       />
 
       {/* Global Error Banner */}

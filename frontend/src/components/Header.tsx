@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, RotateCcw, Cpu, Code2, Scale, Sun, Moon } from 'lucide-react';
+import { Sparkles, RotateCcw, Cpu, Code2, Scale, Sun, Moon, ArrowLeft } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
 interface HeaderProps {
@@ -8,6 +8,7 @@ interface HeaderProps {
   onReset: () => void;
   onOpenStateEditor: () => void;
   isLoading: boolean;
+  onNavigateHome?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -16,6 +17,7 @@ export const Header: React.FC<HeaderProps> = ({
   onReset,
   onOpenStateEditor,
   isLoading,
+  onNavigateHome,
 }) => {
   const { theme, toggleTheme } = useTheme();
   const isComplete = completionPercentage === 100;
@@ -25,21 +27,38 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
         {/* Brand & Title */}
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-brand-600 via-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-glow-brand ring-1 ring-white/20">
-            <Scale className="h-4.5 w-4.5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-bold text-slate-900 dark:text-white text-base tracking-tight leading-tight">
-                Document Intake Assistant
-              </h1>
-              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 border border-brand-200/70 dark:border-brand-800">
-                Personal Wishes
-              </span>
+          {onNavigateHome && (
+            <button
+              onClick={onNavigateHome}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-300 hover:bg-slate-100 dark:hover:bg-slate-850 border border-slate-200/80 dark:border-slate-700 transition-all cursor-pointer shadow-2xs hover:shadow-xs"
+              title="Return to Overview / Landing Page"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
+              <span className="hidden sm:inline">Overview</span>
+            </button>
+          )}
+
+          <div
+            onClick={onNavigateHome}
+            className={`flex items-center gap-3 ${onNavigateHome ? 'cursor-pointer group' : ''}`}
+            title={onNavigateHome ? 'Go to Overview' : undefined}
+          >
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-brand-600 via-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-glow-brand ring-1 ring-white/20 group-hover:scale-105 transition-transform">
+              <Scale className="h-4.5 w-4.5" />
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 hidden md:block">
-              Conversational Intake & Live Legal Draft Generator
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-bold text-slate-900 dark:text-white text-base tracking-tight leading-tight group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+                  Document Intake Assistant
+                </h1>
+                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 border border-brand-200/70 dark:border-brand-800">
+                  Personal Wishes
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 hidden md:block">
+                Conversational Intake & Live Legal Draft Generator
+              </p>
+            </div>
           </div>
         </div>
 
