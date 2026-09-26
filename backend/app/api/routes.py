@@ -142,6 +142,15 @@ async def manual_state_edit(payload: StateUpdateRequest):
         active_provider=provider.provider_name
     )
 
+@router.get("/sessions")
+async def list_persisted_sessions():
+    """Returns a list of all intake sessions stored in the SQLite database."""
+    sessions = state_manager.list_sessions()
+    return {
+        "sessions": sessions,
+        "total": len(sessions)
+    }
+
 @router.get("/fixtures")
 async def list_fixtures():
     """Returns sample test fixtures for demonstration and automated testing."""

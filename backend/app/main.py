@@ -2,8 +2,10 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 from app.config import settings
 from app.api.routes import router
+from app.db import init_db
 
 # Configure logging
 logging.basicConfig(
@@ -12,10 +14,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize SQLite database schema
+    try:
+        init_db()
+        logger.info("SQLite database initialized successfully on startup.")
+    except Exception as e:
+        logger.error(f"Error initializing database on startup: {e}", exc_info=True)
+    yield
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="Conversational intake engine and live legal draft generator for Personal Wishes Documents."
+    description="Conversational intake engine and live legal draft generator for Personal Wishes Documents.",
+    lifespan=lifespan
 )
 
 # CORS configuration

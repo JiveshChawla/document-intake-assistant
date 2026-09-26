@@ -5,46 +5,224 @@ from pydantic import ValidationError
 from app.models.state import PersonalWishesState, ExecutorInfo, GiftItem
 from app.models.chat import ChatMessage
 from app.services.validator import InputValidator
+from app.db.session import SessionLocal, init_db
+from app.db.models import SessionModel, ChatMessageModel, StructuredStateModel
 
 logger = logging.getLogger(__name__)
 
+class MessageList(list):
+    """
+    Subclass of list that transparently mirrors message additions to SQLite persistence.
+    Ensures that calling session.messages.append(msg) automatically saves to the database.
+    """
+    def __init__(self, session_id: str, state_mgr: Optional["StateManager"] = None, initial_items: Optional[List[ChatMessage]] = None):
+        super().__init__(initial_items or [])
+        self._session_id = session_id
+        self._state_mgr = state_mgr
+
+    def append(self, item: ChatMessage):
+        super().append(item)
+        if self._state_mgr and self._session_id:
+            self._state_mgr.persist_message(self._session_id, item)
+
+    def extend(self, items):
+        for item in items:
+            self.append(item)
+
 class SessionData:
-    def __init__(self, session_id: str):
+    def __init__(
+        self,
+        session_id: str,
+        state: Optional[PersonalWishesState] = None,
+        messages: Optional[List[ChatMessage]] = None,
+        state_mgr: Optional["StateManager"] = None
+    ):
         self.session_id = session_id
-        self.state = PersonalWishesState()
-        self.messages: List[ChatMessage] = []
+        self.state = state or PersonalWishesState()
+        self.messages = MessageList(session_id, state_mgr, messages or [])
         self.state_history: List[Dict[str, Any]] = []
 
 class StateManager:
     """
-    Manages structured state as the application's single source of truth.
+    Manages structured state as the application's single source of truth,
+    backed by SQLite for persistent data storage across restarts.
     Strictly validates LLM proposed updates before mutating state to ensure
     invariants, prevent hallucinations, and protect against malformed payloads.
     """
 
     def __init__(self):
         self._sessions: Dict[str, SessionData] = {}
+        # Ensure database tables exist in SQLite
+        try:
+            init_db()
+        except Exception as e:
+            logger.warning(f"Database initialization deferred or encountered: {e}")
 
     def get_or_create_session(self, session_id: str = "default") -> SessionData:
-        if session_id not in self._sessions:
-            session = SessionData(session_id)
-            # Add initial welcome message
-            welcome_msg = ChatMessage(
-                role="assistant",
-                content=(
-                    "Hello! I am your Document Intake Assistant. I will help you create your "
-                    "formal Personal Wishes Document through a quick, guided conversation.\n\n"
-                    "To begin, could you please tell me your full legal name?"
+        """
+        Retrieves an active session from memory cache or SQLite database.
+        If it does not exist, initializes a new session with initial welcome
+        greeting and empty structured state in SQLite.
+        """
+        if session_id in self._sessions:
+            return self._sessions[session_id]
+
+        try:
+            with SessionLocal() as db:
+                db_session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+                if db_session:
+                    # Hydrate from SQLite
+                    loaded_messages = [m.to_pydantic() for m in db_session.messages]
+                    loaded_state = db_session.state.to_pydantic() if db_session.state else PersonalWishesState()
+                    
+                    session = SessionData(
+                        session_id=session_id,
+                        state=loaded_state,
+                        messages=loaded_messages,
+                        state_mgr=self
+                    )
+                    self._sessions[session_id] = session
+                    return session
+
+                # Create fresh session in SQLite
+                new_db_session = SessionModel(session_id=session_id)
+                db.add(new_db_session)
+                db.flush()
+
+                # Add initial assistant welcome greeting
+                welcome_msg = ChatMessage(
+                    role="assistant",
+                    content=(
+                        "Hello! I am your Document Intake Assistant. I will help you create your "
+                        "formal Personal Wishes Document through a quick, guided conversation.\n\n"
+                        "To begin, could you please tell me your full legal name?"
+                    )
                 )
-            )
-            session.messages.append(welcome_msg)
-            self._sessions[session_id] = session
-        return self._sessions[session_id]
+                db_msg = ChatMessageModel.from_pydantic(session_id, welcome_msg)
+                db.add(db_msg)
+
+                # Initialize empty structured state
+                initial_state = PersonalWishesState()
+                db_state = StructuredStateModel(session_id=session_id)
+                db_state.update_from_pydantic(initial_state)
+                db.add(db_state)
+
+                db.commit()
+
+                session = SessionData(
+                    session_id=session_id,
+                    state=initial_state,
+                    messages=[welcome_msg],
+                    state_mgr=self
+                )
+                self._sessions[session_id] = session
+                return session
+        except Exception as e:
+            logger.error(f"Error accessing SQLite in get_or_create_session: {e}", exc_info=True)
+            # Resilient fallback if DB error occurs
+            if session_id not in self._sessions:
+                welcome_msg = ChatMessage(
+                    role="assistant",
+                    content=(
+                        "Hello! I am your Document Intake Assistant. I will help you create your "
+                        "formal Personal Wishes Document through a quick, guided conversation.\n\n"
+                        "To begin, could you please tell me your full legal name?"
+                    )
+                )
+                session = SessionData(
+                    session_id=session_id,
+                    state=PersonalWishesState(),
+                    messages=[welcome_msg],
+                    state_mgr=self
+                )
+                self._sessions[session_id] = session
+            return self._sessions[session_id]
+
+    def persist_message(self, session_id: str, message: ChatMessage) -> None:
+        """Persists a single chat message to the SQLite database."""
+        try:
+            with SessionLocal() as db:
+                db_session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+                if not db_session:
+                    db_session = SessionModel(session_id=session_id)
+                    db.add(db_session)
+                    db.flush()
+
+                db_msg = ChatMessageModel.from_pydantic(session_id, message)
+                db.add(db_msg)
+                db.commit()
+        except Exception as e:
+            logger.error(f"Error persisting message to SQLite for session {session_id}: {e}", exc_info=True)
+
+    def persist_state(self, session_id: str, state: PersonalWishesState) -> None:
+        """Persists structured state to the SQLite database."""
+        try:
+            with SessionLocal() as db:
+                db_state = db.query(StructuredStateModel).filter(StructuredStateModel.session_id == session_id).first()
+                if not db_state:
+                    db_session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+                    if not db_session:
+                        db_session = SessionModel(session_id=session_id)
+                        db.add(db_session)
+                        db.flush()
+                    db_state = StructuredStateModel(session_id=session_id)
+                    db.add(db_state)
+
+                db_state.update_from_pydantic(state)
+                db.commit()
+        except Exception as e:
+            logger.error(f"Error persisting structured state to SQLite for session {session_id}: {e}", exc_info=True)
+
+    def add_message(self, session_id: str, message: ChatMessage) -> None:
+        """Convenience method to append and persist a message."""
+        session = self.get_or_create_session(session_id)
+        session.messages.append(message)
 
     def reset_session(self, session_id: str = "default") -> SessionData:
-        """Resets the conversation and structured state to initial clean state."""
+        """Resets the conversation and structured state in SQLite and in-memory cache."""
+        try:
+            with SessionLocal() as db:
+                db_session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+                if db_session:
+                    db.delete(db_session)
+                    db.commit()
+        except Exception as e:
+            logger.error(f"Error resetting session {session_id} in SQLite: {e}", exc_info=True)
+
         self._sessions.pop(session_id, None)
         return self.get_or_create_session(session_id)
+
+    def list_sessions(self) -> List[Dict[str, Any]]:
+        """Returns metadata for all persisted sessions in SQLite."""
+        try:
+            with SessionLocal() as db:
+                sessions = db.query(SessionModel).order_by(SessionModel.updated_at.desc()).all()
+                result = []
+                for s in sessions:
+                    result.append({
+                        "session_id": s.session_id,
+                        "created_at": s.created_at.isoformat() if s.created_at else None,
+                        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+                        "message_count": len(s.messages),
+                        "completion_percentage": s.state.completion_percentage if s.state else 0,
+                        "full_name": s.state.full_name if s.state else None,
+                    })
+                return result
+        except Exception as e:
+            logger.error(f"Error listing sessions from SQLite: {e}", exc_info=True)
+            return []
+
+    def clear_all(self) -> None:
+        """Clears all sessions, messages, and state from both SQLite and memory cache."""
+        try:
+            with SessionLocal() as db:
+                db.query(ChatMessageModel).delete()
+                db.query(StructuredStateModel).delete()
+                db.query(SessionModel).delete()
+                db.commit()
+        except Exception as e:
+            logger.error(f"Error clearing database: {e}", exc_info=True)
+        self._sessions.clear()
 
     def apply_validated_updates(
         self,
@@ -53,6 +231,7 @@ class StateManager:
     ) -> Tuple[PersonalWishesState, Dict[str, Any], List[str]]:
         """
         Validates proposed updates against schema invariants and applies them.
+        Persists the resulting state into SQLite.
         Returns:
             - updated PersonalWishesState
             - state_delta (only the actual changes)
@@ -211,6 +390,10 @@ class StateManager:
             session.state = new_state
             if actual_delta:
                 session.state_history.append(actual_delta)
+            
+            # Persist updated state to SQLite
+            self.persist_state(session_id, new_state)
+
             return new_state, actual_delta, validation_warnings
         except ValidationError as e:
             logger.critical(f"State integrity violation prevented: {e}")
@@ -218,10 +401,11 @@ class StateManager:
             return current_state, {}, validation_warnings
 
     def set_direct_state(self, session_id: str, new_state: PersonalWishesState) -> PersonalWishesState:
-        """Directly overrides state from user manual edit."""
+        """Directly overrides state from user manual edit and saves to SQLite."""
         session = self.get_or_create_session(session_id)
         session.state = new_state
         session.state_history.append({"direct_override": new_state.model_dump()})
+        self.persist_state(session_id, new_state)
         return session.state
 
 # Global singleton state manager

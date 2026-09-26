@@ -4,7 +4,9 @@ from app.models.state import PersonalWishesState, ExecutorInfo
 
 @pytest.fixture
 def fresh_manager():
-    return StateManager()
+    mgr = StateManager()
+    mgr.clear_all()
+    return mgr
 
 def test_apply_multi_field_updates(fresh_manager):
     session_id = "test_multi"

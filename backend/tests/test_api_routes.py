@@ -5,7 +5,7 @@ from app.services.state_manager import state_manager
 
 @pytest.fixture(autouse=True)
 def clean_state():
-    state_manager._sessions.clear()
+    state_manager.clear_all()
 
 @pytest.mark.asyncio
 async def test_health_endpoint():
