@@ -13,10 +13,11 @@ class MockLLMProvider(BaseLLMProvider):
     Runs completely offline with zero external dependencies.
     Accurately handles:
     - Universal free-text input for names and addresses from any country worldwide
+    - Non-linear field updates, overrides, and backtracking at any point in the interview
     - Multi-field intake in any order
     - Direct conversational answers (e.g., answering 'Yes' to children)
     - Ambiguity detection and intelligent follow-ups without stuck loops
-    - Non-destructive corrections
+    - Non-destructive corrections with seamless resumption
     """
     provider_name = "mock"
 
@@ -48,23 +49,27 @@ class MockLLMProvider(BaseLLMProvider):
         acknowledged_parts: List[str] = []
 
         # 3. Detect and apply corrections (e.g., "Actually, my address is...", "Change executor to...")
-        is_correction = bool(re.search(r"\b(actually|change|update|correction|instead of|replace)\b", text, re.IGNORECASE))
+        is_correction = bool(re.search(
+            r"\b(actually|change|update|correction|instead of|replace|switch|correct|modify|set my|set|add a gift|add a wish|add wish|add gift|remove all|clear all)\b",
+            text,
+            re.IGNORECASE
+        ))
 
         # 4. Extract Full Name
-        name = self._extract_name(text, current_state, last_topic)
-        if name is not None and last_topic not in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP"]:
+        name, name_ambiguity = self._extract_name(text, current_state, last_topic)
+        if name_ambiguity:
+            ambiguities.append(name_ambiguity)
+        elif name is not None:
             updates["full_name"] = name
             acknowledged_parts.append(f"name as {name}")
-        elif last_topic == "NAME" and name is None:
-            ambiguities.append(f"The input '{text}' could not be verified as a valid legal name. Please provide your legal full name.")
 
         # 5. Extract Home Address (universal support for any country)
-        address = self._extract_address(text, current_state, last_topic, has_name=(name is not None))
-        if address is not None:
+        address, address_ambiguity = self._extract_address(text, current_state, last_topic, has_name=(name is not None))
+        if address_ambiguity:
+            ambiguities.append(address_ambiguity)
+        elif address is not None:
             updates["home_address"] = address
             acknowledged_parts.append(f"address as '{address}'")
-        elif last_topic == "ADDRESS" and address is None:
-            ambiguities.append(f"The input '{text}' does not appear to be a valid residential address. Please provide your physical street and city.")
 
         # 6. Extract Worldwide Assets Scope
         scope, scope_ambiguity = self._extract_asset_scope(text, last_topic)
@@ -115,11 +120,17 @@ class MockLLMProvider(BaseLLMProvider):
                 acknowledged_parts.append(f"executor relationship as {executor_update['relationship']}")
 
         # 9. Extract Specific Gifts
-        gifts, gifts_declined, pending_gift_details = self._extract_gifts(text, last_topic)
+        gifts, gifts_declined, pending_gift_details, gifts_cleared = self._extract_gifts(text, last_topic)
         just_added_gift = False
-        if gifts:
+        if gifts_cleared:
+            updates["specific_gifts"] = []
+            acknowledged_parts.append("that you have removed all specific gifts")
+        elif gifts:
             existing_gifts = list(current_state.specific_gifts or [])
-            updated_gifts = existing_gifts + gifts
+            if re.search(r"\b(change|replace|update|set)\s+(?:my\s+)?gifts\s+to\b", text, re.IGNORECASE):
+                updated_gifts = gifts
+            else:
+                updated_gifts = existing_gifts + gifts
             updates["specific_gifts"] = [g.model_dump() for g in updated_gifts]
             just_added_gift = True
             for g in gifts:
@@ -128,11 +139,17 @@ class MockLLMProvider(BaseLLMProvider):
             acknowledged_parts.append("that you have no specific gifts to designate at this time")
 
         # 10. Extract Additional Wishes
-        wishes, wishes_declined, pending_wish_details = self._extract_additional_wishes(text, last_topic)
+        wishes, wishes_declined, pending_wish_details, wishes_cleared = self._extract_additional_wishes(text, last_topic)
         just_added_wish = False
-        if wishes:
+        if wishes_cleared:
+            updates["additional_wishes"] = []
+            acknowledged_parts.append("that you have removed all additional wishes")
+        elif wishes:
             existing_wishes = list(current_state.additional_wishes or [])
-            updated_wishes = existing_wishes + wishes
+            if re.search(r"\b(change|replace|update|set)\s+(?:my\s+)?wishes\s+to\b", text, re.IGNORECASE):
+                updated_wishes = wishes
+            else:
+                updated_wishes = existing_wishes + wishes
             updates["additional_wishes"] = updated_wishes
             just_added_wish = True
             for w in wishes:
@@ -140,7 +157,26 @@ class MockLLMProvider(BaseLLMProvider):
         elif wishes_declined:
             acknowledged_parts.append("no additional personal wishes to add")
 
-        # 10.5 Validate proposed updates against strict schema
+        # 10.5 Determine if this turn is an override of an existing/out-of-order field
+        is_override = False
+        if is_correction:
+            is_override = True
+        else:
+            for k in updates:
+                curr_val = getattr(current_state, k, None)
+                if curr_val not in [None, [], {}]:
+                    is_override = True
+                    break
+
+        # Fallback topic-mismatch ambiguities: only if user was expected to answer last_topic
+        # but provided invalid input and did not provide an override for any field
+        if not updates and not is_override:
+            if last_topic == "NAME" and name is None and not name_ambiguity:
+                ambiguities.append(f"The input '{text}' could not be verified as a valid legal name. Please provide your legal full name.")
+            elif last_topic == "ADDRESS" and address is None and not address_ambiguity:
+                ambiguities.append(f"The input '{text}' does not appear to be a valid residential address. Please provide your physical street and city.")
+
+        # 10.6 Validate proposed updates against strict schema
         validated_updates, rejections = InputValidator.validate_proposed_updates(updates, text)
         if rejections:
             ambiguities.extend(rejections)
@@ -163,6 +199,7 @@ class MockLLMProvider(BaseLLMProvider):
             wishes_declined=wishes_declined,
             pending_wish_details=pending_wish_details,
             just_added_wish=just_added_wish,
+            is_override=is_override,
         )
 
         return LLMExtractionResult(
@@ -185,27 +222,40 @@ class MockLLMProvider(BaseLLMProvider):
     # -------------------------------------------------------------
     def _extract_name(
         self, text: str, current_state: PersonalWishesState, last_topic: Optional[str]
-    ) -> Optional[str]:
-        # STRICT GUARD 1: If current turn is about EXECUTOR, GIFTS, or WISHES, NEVER extract principal full_name!
+    ) -> Tuple[Optional[str], Optional[str]]:
+        # Guard: If user is explicitly correcting another field, NEVER extract name!
+        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove)\s+(?:my\s+)?(?:address|executor|representative|scope|assets|children|kids|gift|gifts|wish|wishes)\b", text, re.IGNORECASE):
+            return None, None
+
+        # 1. Explicit name override / correction (can occur ANY time regardless of last_topic)
+        override_patterns = [
+            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace|fix)\s+(?:my\s+)?(?:full\s+)?name\s+(?:to|with|as|is)?\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.)|\s*$)",
+            r"(?:actually|please)?\s*(?:my\s+)?(?:full\s+)?name\s+is\s+actually\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.)|\s*$)",
+            r"(?:actually|please)?\s*(?:call me|refer to me as)\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.)|\s*$)",
+        ]
+        for pat in override_patterns:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                cand = m.group(1).strip()
+                cand = re.sub(r"^(?:to|with|as|is)\s+", "", cand, flags=re.IGNORECASE).strip()
+                cleaned = self._clean_name(cand)
+                if cleaned:
+                    return cleaned, None
+                else:
+                    is_valid, reason = InputValidator.validate_name(cand)
+                    return None, f"The legal name '{cand}' is invalid ({reason}). Please provide your legal full name."
+
+        # 2. Strict guard: If active turn is about EXECUTOR, GIFTS, or WISHES, NEVER extract principal full_name!
         if last_topic in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP", "GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES", "WISHES", "WISHES_DETAILS"]:
-            if not re.search(r"\b(change my name to|update my name to)\b", text, re.IGNORECASE):
-                return None
+            return None, None
 
-        # STRICT GUARD 2: If current_state.full_name is already confirmed, ONLY allow explicit corrections!
+        # 3. Strict guard: If current_state.full_name is already confirmed, only explicit overrides above are permitted
         if current_state.full_name is not None and len(current_state.full_name.strip()) > 0:
-            match_correction = re.search(
-                r"(?:actually|please)?\s*(?:change my name to|update my name to|my name is actually)\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.|$))",
-                text,
-                re.IGNORECASE
-            )
-            if match_correction:
-                return self._clean_name(match_correction.group(1).strip())
-            return None
+            return None, None
 
-        # Explicit name declaration patterns (for initial intake)
+        # 4. Explicit name declaration patterns (for initial intake)
         patterns = [
-            r"(?:actually|please)?\s*(?:change my name to|update my name to)\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.|$))",
-            r"(?:my name is|i am|i'm|this is)\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.|$))",
+            r"(?:my name is|i am|i'm|this is)\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.)|\s*$)",
         ]
         for pat in patterns:
             m = re.search(pat, text, re.IGNORECASE)
@@ -214,24 +264,32 @@ class MockLLMProvider(BaseLLMProvider):
                 # Exclude verb phrases like "i am choosing...", "i am appointing..."
                 if re.search(r"\b(choosing|appointing|leaving|giving|want|wishing)\b", cand, re.IGNORECASE):
                     continue
-                cand = self._clean_name(cand)
-                if cand:
-                    return cand
+                cleaned = self._clean_name(cand)
+                if cleaned:
+                    return cleaned, None
+                else:
+                    is_valid, reason = InputValidator.validate_name(cand)
+                    return None, f"The legal name '{cand}' is invalid ({reason}). Please provide your legal full name."
 
-        # Contextual: Assistant asked for user's full name
-        if (last_topic == "NAME" or (not current_state.full_name and len(current_state.get_missing_fields()) >= 5)):
-            clean_text = text.strip()
+        # 5. Contextual: Assistant asked for user's full name, OR user answered with "living at" clause
+        clean_text = text.strip()
+        has_living_clause = bool(re.search(r"\s+(?:living|residing|live|at)\s+", clean_text, re.IGNORECASE))
+        if last_topic == "NAME" or has_living_clause or (not current_state.full_name and len(current_state.get_missing_fields()) >= 5):
             clean_text = re.sub(r"^(?:hello|hi|hey|sure|it is|it's|my name is|i am|i'm)\s+", "", clean_text, flags=re.IGNORECASE).strip()
-            if re.search(r"\s+(?:living|residing|live|at)\s+", clean_text, re.IGNORECASE):
+            if has_living_clause:
                 cand = re.split(r"\s+(?:living|residing|live|at)\b", clean_text, flags=re.IGNORECASE)[0].strip().rstrip(",")
             else:
                 cand = clean_text.split(",")[0].strip().rstrip(".")
-            
-            cand = self._clean_name(cand)
-            if cand and not re.search(r"\b(yes|no|worldwide|children|executor|brother|sister)\b", cand, re.IGNORECASE):
-                return cand
 
-        return None
+            if cand and not re.search(r"\b(yes|no|worldwide|children|executor|brother|sister)\b", cand, re.IGNORECASE):
+                cleaned = self._clean_name(cand)
+                if cleaned:
+                    return cleaned, None
+                elif has_living_clause or last_topic == "NAME":
+                    is_valid, reason = InputValidator.validate_name(cand)
+                    return None, f"The legal name '{cand}' is invalid ({reason}). Please provide your legal full name."
+
+        return None, None
 
     def _clean_name(self, name_str: str) -> Optional[str]:
         n = re.sub(r"^(?:mr\.|mrs\.|ms\.|dr\.|prof\.)\s*", "", name_str.strip(), flags=re.IGNORECASE)
@@ -247,15 +305,36 @@ class MockLLMProvider(BaseLLMProvider):
 
     def _extract_address(
         self, text: str, current_state: PersonalWishesState, last_topic: Optional[str], has_name: bool = False
-    ) -> Optional[str]:
-        # STRICT GUARD: If current turn is about EXECUTOR, GIFTS, or WISHES, NEVER extract address unless explicit correction!
-        if last_topic in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP", "GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES", "WISHES", "WISHES_DETAILS"]:
-            if not re.search(r"\b(change my address to|update my address to)\b", text, re.IGNORECASE):
-                return None
+    ) -> Tuple[Optional[str], Optional[str]]:
+        # Guard: If user is explicitly correcting another field, NEVER extract address!
+        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove)\s+(?:my\s+)?(?:name|executor|representative|scope|assets|children|kids|gift|gifts|wish|wishes)\b", text, re.IGNORECASE):
+            return None, None
 
-        # Explicit patterns
+        # 1. Explicit address override patterns (can occur ANY time regardless of last_topic)
+        override_patterns = [
+            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace|fix)\s+(?:my\s+)?(?:home\s+)?address\s+(?:to|with|as|is)?\s+([^.]+)",
+            r"(?:actually|please)?\s*(?:my\s+)?(?:home\s+)?address\s+is\s+(?:actually\s+|now\s+)?([^.]+)",
+            r"(?:actually|please)?\s*(?:i\s+(?:actually\s+)?(?:live|reside)\s+at)\s+([^.]+)",
+        ]
+        for pat in override_patterns:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                cand = m.group(1).strip().rstrip(".,")
+                cand = re.sub(r"^(?:to|with|as|is)\s+", "", cand, flags=re.IGNORECASE).strip()
+                cand = re.split(r"\s+(?:and\s+(?:i\s+want|worldwide|i\s+have|no\s+kids|my\s+executor)|worldwide)\b", cand, flags=re.IGNORECASE)[0].strip().rstrip(".,")
+                if len(cand) >= 2:
+                    is_valid, reason = InputValidator.validate_address(cand)
+                    if is_valid:
+                        return cand, None
+                    else:
+                        return None, f"The residential address '{cand}' is invalid ({reason}). Please provide a valid physical street address and city."
+
+        # 2. Strict guard: If current turn is about EXECUTOR, GIFTS, or WISHES, NEVER extract address unless explicit override matched
+        if last_topic in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP", "GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES", "WISHES", "WISHES_DETAILS"]:
+            return None, None
+
+        # 3. Standard explicit patterns
         patterns = [
-            r"(?:actually|please)?\s*(?:change my address to|update my address to)\s+([^.]+)",
             r"(?:living at|residing at|live at|reside at|residing in|address is|home address is|my address is)\s+([^,.\n]+(?:,[^,.\n]+)*)",
         ]
         for pat in patterns:
@@ -264,52 +343,62 @@ class MockLLMProvider(BaseLLMProvider):
                 addr = m.group(1).strip().rstrip(".,")
                 # Avoid capturing trailing multi-field statements
                 addr = re.split(r"\s+(?:and\s+(?:i\s+want|i\s+don't|worldwide|no\s+children|my\s+executor)|worldwide|no\s+kids)\b", addr, flags=re.IGNORECASE)[0].strip()
-                if len(addr) >= 4:
-                    is_valid, _ = InputValidator.validate_address(addr)
+                if len(addr) >= 2:
+                    is_valid, reason = InputValidator.validate_address(addr)
                     if is_valid:
-                        return addr
+                        return addr, None
+                    else:
+                        return None, f"The residential address '{addr}' is invalid ({reason}). Please provide a valid physical street address and city."
 
-        # Contextual: Assistant asked for residential address
+        # 4. Contextual: Assistant asked for residential address
         if last_topic == "ADDRESS":
-            # If user message contains address directly
             candidate = text.strip()
-            # Strip phrases like "I live at", "My address is"
             candidate = re.sub(r"^(?:i live at|my address is|it's|it is|sure,|currently at)\s+", "", candidate, flags=re.IGNORECASE).strip()
-            # Split off any subsequent clauses if user provided multi-field info
             candidate = re.split(r"\s+(?:and\s+(?:i\s+want|worldwide|i\s+have|no\s+kids|my\s+executor)|worldwide)\b", candidate, flags=re.IGNORECASE)[0].strip().rstrip(".,")
-            if len(candidate) >= 4 and not re.search(r"\b(yes|no|none|cancel)\b", candidate, re.IGNORECASE):
-                is_valid, _ = InputValidator.validate_address(candidate)
+            if len(candidate) >= 2 and not re.search(r"\b(yes|no|none|cancel)\b", candidate, re.IGNORECASE):
+                is_valid, reason = InputValidator.validate_address(candidate)
                 if is_valid:
-                    return candidate
+                    return candidate, None
+                else:
+                    return None, f"The residential address '{candidate}' is invalid ({reason}). Please provide a valid physical street address and city."
 
-        # Multi-field fallback: if text has "10 Downing St" or digits followed by text with comma
+        # 5. Multi-field fallback: if text has digits followed by text with comma
         if re.search(r"\b\d+\s+[^,]+(?:,[^,]+)+", text):
             m = re.search(r"\b\d+\s+[^,]+(?:,[^,]+)+", text)
             if m:
                 cand = m.group(0).strip().rstrip(".,")
                 cand = re.split(r"\s+(?:and|worldwide)\b", cand, flags=re.IGNORECASE)[0].strip()
-                is_valid, _ = InputValidator.validate_address(cand)
+                is_valid, reason = InputValidator.validate_address(cand)
                 if is_valid:
-                    return cand
+                    return cand, None
 
-        return None
+        return None, None
 
     def _extract_asset_scope(self, text: str, last_topic: Optional[str]) -> Tuple[Optional[bool], Optional[str]]:
         t = text.lower()
-        
-        # Ambiguity check: user expresses hesitation / doubt regarding foreign property
+        # Guard: If user is correcting another field, don't trigger asset scope unless scope is mentioned
+        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove)\s+(?:my\s+)?(?:name|address|executor|representative|children|kids|gift|gifts|wish|wishes)\b", t):
+            return None, None
+
+        # 1. Explicit asset scope overrides (can occur ANY time)
+        if re.search(r"\b(?:change|update|switch|set|make)\b.*\b(?:domestic|local)\b", t) or re.search(r"\b(?:change|update|switch|set)\s+(?:asset\s+scope\s+to\s+)?(?:domestic|domestic\s+only|local\s+only)\b", t):
+            return False, None
+        if re.search(r"\b(?:change|update|switch|set|make)\b.*\b(?:worldwide|global|international)\b", t) or re.search(r"\b(?:change|update|switch|set)\s+(?:asset\s+scope\s+to\s+)?(?:worldwide|global)\b", t):
+            return True, None
+
+        # 2. Ambiguity check: user expresses hesitation / doubt regarding foreign property
         if re.search(r"\b(property abroad|foreign property|house in|condo in|property overseas|assets in [a-z]+)\b", t) and re.search(r"\b(not sure|maybe|perhaps|don't know|depends)\b", t):
             return None, "Asset scope is ambiguous: You mentioned foreign property with uncertainty. Please confirm whether the document should cover worldwide assets or domestic only."
 
-        # Worldwide indicators
+        # 3. Worldwide indicators
         if re.search(r"\b(worldwide|worldwide assets|cover worldwide|all assets|global|international|everywhere|both domestic and foreign|all of them|everything)\b", t):
             return True, None
 
-        # Domestic indicators
+        # 4. Domestic indicators
         if re.search(r"\b(domestic|domestic only|only domestic|just domestic|local only|only local|home country only|only in (?:the )?[a-z]+)\b", t):
             return False, None
 
-        # Contextual response when asked about worldwide assets
+        # 5. Contextual response when asked about worldwide assets
         if last_topic == "WORLDWIDE":
             if re.search(r"\b(yes|yeah|yep|sure|worldwide|all|everything)\b", t):
                 return True, None
@@ -323,41 +412,63 @@ class MockLLMProvider(BaseLLMProvider):
     ) -> Tuple[Optional[bool], Optional[List[str]], Optional[str]]:
         t = text.lower()
 
-        # STRICT GUARD 1: If current turn is about GIFTS, WISHES, or EXECUTOR, NEVER extract children status unless explicitly discussing children!
+        # Guard: If user is explicitly correcting another field, don't extract children!
+        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove)\s+(?:my\s+)?(?:name|address|executor|representative|scope|assets|gift|gifts|wish|wishes)\b", t):
+            return None, None, None
+
+        # 1. Explicit negative overrides (can occur ANY time)
+        if (
+            re.search(r"\b(?:change|update|set|switch)\s+(?:my\s+)?(?:children|kids)\s+to\s+(?:none|no|zero|empty)\b", t)
+            or re.search(r"\b(?:remove|delete|clear)\s+(?:all\s+)?(?:my\s+)?(?:children|kids)\b", t)
+            or (re.search(r"\b(actually|correction|change|update)\b", t) and re.search(r"\b(no children|don't have (?:any )?children|do not have (?:any )?children|no kids|zero children|without children)\b", t))
+        ):
+            return False, [], None
+
+        # 2. Explicit positive overrides (can occur ANY time)
+        match_child_override = re.search(
+            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace)\s+(?:my\s+)?(?:children|kids)\s+(?:to|with|as|is)?\s+([A-Za-zÀ-ÿ\s,\&and]+)",
+            text,
+            re.IGNORECASE
+        )
+        if match_child_override:
+            raw = match_child_override.group(1).strip().rstrip(".,")
+            raw = re.sub(r"^(?:to|with|as|is)\s+", "", raw, flags=re.IGNORECASE).strip()
+            names = self._parse_names_list(raw)
+            if names:
+                return True, names, None
+
+        # 3. STRICT GUARD 1: If current turn is about GIFTS, WISHES, or EXECUTOR, NEVER extract children status unless explicitly discussing children!
         if last_topic in ["GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES", "WISHES", "WISHES_DETAILS", "EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP"]:
             if not re.search(r"\b(children|child|kids)\b", t):
                 return None, None, None
 
-        # STRICT GUARD 2: If current_state.has_children is already set, do not alter it unless explicit correction!
+        # 4. STRICT GUARD 2: If current_state.has_children is already set, do not alter it unless explicit correction!
         if current_state.has_children is not None:
             if not re.search(r"\b(actually|change|correction|update)\b", t):
                 return None, None, None
 
-        # Negative phrases (no children)
+        # 5. Negative phrases (no children)
         if re.search(r"\b(no children|don't have (?:any )?children|do not have (?:any )?children|no kids|haven't got (?:any )?children|zero children|without children|not have (?:any )?children|have no children|no child)\b", t):
             return False, [], None
 
-        # Contextual negative when asked "Do you have any children?"
+        # 6. Contextual negative when asked "Do you have any children?"
         if last_topic == "CHILDREN_STATUS":
             if re.search(r"^(?:no|nope|nah|none|not yet|i don't|no i don't|zero)$", t) or re.search(r"\b(no,?\s+i\s+don't|no children)\b", t):
                 return False, [], None
 
-        # Positive indicators
+        # 7. Positive indicators
         has_pos = bool(
             re.search(r"\b(have children|have kids|have a son|have a daughter|have two children|have three children|have \d+ children|my children|my son|my daughter|two children|three children)\b", t)
             or (last_topic == "CHILDREN_STATUS" and re.search(r"\b(yes|yeah|yep|yes i do|sure|i do|indeed|yes,?\s+\d+)\b", t))
         )
 
         if has_pos:
-            # Check if names are also provided in this turn
             names = []
-            # Look for names after "named", "called", ":", or "e.g."
-            match_named = re.search(r"(?:named|called|children are|kids are|two:|three:)\s+([A-Za-zÀ-ÿ\s,\&and]+)", text, re.IGNORECASE)
+            match_named = re.search(r"(?:named|called|children are|kids are|two:|three:|children(?:\s+to)?|kids(?:\s+to)?)\s+([A-Za-zÀ-ÿ\s,\&and]+)", text, re.IGNORECASE)
             if match_named:
                 raw = match_named.group(1).strip().rstrip(".,")
                 names = self._parse_names_list(raw)
             elif last_topic == "CHILDREN_STATUS" and re.search(r"(?:yes,?\s+)(?:two|three|\d+)?\s*([A-Za-zÀ-ÿ\s,\&and]+)", text, re.IGNORECASE):
-                # e.g., "Yes, John and Mary"
                 after_yes = re.sub(r"^(?:yes|yeah|yep|i do),?\s*(?:two|three|\d+)?\s*(?:children|kids)?\s*(?:named|called|:)?\s*", "", text, flags=re.IGNORECASE).strip()
                 if after_yes and len(after_yes) > 2 and not re.search(r"\b(worldwide|executor|address)\b", after_yes, re.IGNORECASE):
                     names = self._parse_names_list(after_yes)
@@ -391,6 +502,50 @@ class MockLLMProvider(BaseLLMProvider):
         self, text: str, current_state: PersonalWishesState, last_topic: Optional[str]
     ) -> Tuple[Optional[Dict[str, Optional[str]]], Optional[str]]:
         t = text.lower()
+        # Guard: If user is discussing another field or making an override for another field, NEVER extract executor!
+        if (
+            re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove)\s+(?:my\s+)?(?:name|address|scope|assets|children|kids|gift|gifts|wish|wishes)\b", t)
+            or re.search(r"\b(wish|wishes|gift|gifts|cremat|scatter|funeral|memorial|burial|organ donor|donate organs)\b", t)
+        ):
+            return None, None
+
+        # 1. Explicit executor override patterns (can occur ANY time)
+        match_exec_override = re.search(
+            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace|switch)\s+(?:my\s+)?(?:executor|personal representative)\s+(?:to|with|as|is)?\s+([^.]+)",
+            text,
+            re.IGNORECASE
+        )
+        if match_exec_override:
+            raw_target = match_exec_override.group(1).strip().rstrip(".,")
+            raw_target = re.sub(r"^(?:to|with|as|is)\s+", "", raw_target, flags=re.IGNORECASE).strip()
+            
+            exec_name = None
+            exec_rel = None
+            target_lower = raw_target.lower()
+            for r in self.RELATIONSHIPS:
+                if re.search(rf"\b{r}\b", target_lower):
+                    exec_rel = r
+                    break
+            
+            cand_name = raw_target
+            if exec_rel:
+                cand_name = re.sub(rf"\b(?:my\s+)?{exec_rel}\b", "", cand_name, flags=re.IGNORECASE).strip()
+                cand_name = re.sub(r"[\(\),]", " ", cand_name).strip()
+                cand_name = re.sub(r"\s+(?:who\s+is|is)\s+", " ", cand_name, flags=re.IGNORECASE).strip()
+                cand_name = re.sub(r"\s+", " ", cand_name).strip()
+            
+            if cand_name and len(cand_name) >= 2:
+                is_valid, _ = InputValidator.validate_name(cand_name)
+                if is_valid:
+                    exec_name = cand_name
+            
+            if exec_name and exec_rel:
+                return {"name": exec_name, "relationship": exec_rel}, None
+            elif exec_name and not exec_rel:
+                return {"name": exec_name, "relationship": None}, f"Executor relationship is missing: You designated {exec_name} as executor, but did not specify their relationship to you."
+            elif exec_rel and not exec_name:
+                return {"name": None, "relationship": exec_rel}, f"Executor name is missing: You specified your {exec_rel} as executor, but not their full legal name."
+
         # STRICT GUARD: If current turn is about GIFTS or WISHES, NEVER extract executor unless explicitly appointing executor!
         if last_topic in ["GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES", "WISHES", "WISHES_DETAILS"]:
             if not re.search(r"\b(executor|personal representative|appoint as executor)\b", t):
@@ -405,27 +560,27 @@ class MockLLMProvider(BaseLLMProvider):
         if not is_executor_turn:
             return None, None
 
-        # 1. Check for relationship in text
+        # Check for relationship in text
         relationship = None
         for rel in self.RELATIONSHIPS:
             if re.search(rf"\b{rel}\b", t):
                 relationship = rel
                 break
 
-        # 2. Extract name
+        # Extract name
         name = None
-        # Patterns like: "My brother James Smith", "Pierre Dubois, my friend", "sister Sarah Jenkins"
         patterns = [
             r"(?:brother|sister|wife|husband|spouse|partner|friend|cousin|son|daughter|uncle|aunt|colleague|lawyer|solicitor|attorney|accountant|neighbour)\s+(?!as\b|to\b|who\b|is\b)([A-Za-zÀ-ÿ\s\-\'\.]+)",
             r"([A-Za-zÀ-ÿ\s\-\'\.]+)\s+(?:who is my|is my)\s+(?:brother|sister|friend|cousin|partner|wife|husband|colleague)",
             r"([A-Za-zÀ-ÿ\s\-\'\.]+)\s*,\s*my\s+(?:brother|sister|friend|cousin|partner|wife|husband|colleague)",
             r"([A-Za-zÀ-ÿ\s\-\'\.]+)\s*\((?:brother|sister|friend|cousin|partner|wife|husband|colleague)\)",
-            r"(?:appoint|executor(?: is)?)\s+(?!my\b|the\b|a\b|an\b)([A-Za-zÀ-ÿ\s\-\'\.]+)",
+            r"(?:appoint|executor(?: is)?)\s+(?!my\b|the\b|a\b|an\b|to\b)([A-Za-zÀ-ÿ\s\-\'\.]+)",
         ]
         for pat in patterns:
             m = re.search(pat, text, re.IGNORECASE)
             if m:
                 cand = m.group(1).strip().rstrip(".,")
+                cand = re.sub(r"^(?:to|with|as|is)\s+", "", cand, flags=re.IGNORECASE).strip()
                 cand = re.split(r"\s+(?:and|as|who|for)\b", cand, flags=re.IGNORECASE)[0].strip()
                 cand_lower = cand.lower()
                 if cand_lower.startswith("as ") or "executor" in cand_lower or cand_lower in ["my", "as", "the", "an", "is", "her", "his", "their", "him"]:
@@ -438,7 +593,7 @@ class MockLLMProvider(BaseLLMProvider):
                         name = cand
                         break
 
-        # If assistant previously asked specifically for the name ("What is the full name of your [relationship]?")
+        # If assistant previously asked specifically for the name ("What is the full legal name of your [relationship]?")
         if last_topic == "EXECUTOR_NAME":
             clean = re.sub(r"^(?:his name is|her name is|their name is|it is|it's|name is|i choose|appoint)\s+", "", text.strip(), flags=re.IGNORECASE).rstrip(".,")
             if len(clean) >= 2 and not re.search(r"\b(yes|no|none|cancel)\b", clean, re.IGNORECASE):
@@ -514,30 +669,38 @@ class MockLLMProvider(BaseLLMProvider):
 
     def _extract_gifts(
         self, text: str, last_topic: Optional[str]
-    ) -> Tuple[List[GiftItem], bool, bool]:
+    ) -> Tuple[List[GiftItem], bool, bool, bool]:
         """
         Returns:
             - gifts: List of extracted GiftItem
             - gifts_declined: bool (True if user declined gifts)
             - pending_gift_details: bool (True if user answered yes without gift details)
+            - gifts_cleared: bool (True if user explicitly cleared/removed gifts)
         """
         t = text.strip()
         t_lower = t.lower()
+
+        # Guard: If user is correcting another field, don't extract gifts!
+        if re.search(r"\b(?:change|update|correct|set|replace|add)\s+(?:my\s+)?(?:name|address|executor|representative|scope|assets|children|kids|wish|wishes)\b", t_lower):
+            return [], False, False, False
+
+        # Explicit removal of gifts
+        if re.search(r"\b(?:remove|clear|delete)\s+(?:all\s+)?(?:my\s+)?gifts\b", t_lower) or re.search(r"\b(?:change|update|set)\s+(?:to\s+)?no\s+gifts\b", t_lower):
+            return [], False, False, True
 
         is_gift_topic = last_topic in ["GIFTS", "GIFTS_DETAILS", "GIFTS_OR_WISHES"]
         has_gift_keywords = bool(re.search(r"\b(gift|gifts|bequeath|bequest|leave my|give my|donate)\b", t_lower))
 
         if not is_gift_topic and not has_gift_keywords:
-            return [], False, False
+            return [], False, False, False
 
         # 1. Check if user declines
         if is_gift_topic:
             decline_phrases = r"\b(no gifts|not at this time|no specific gifts|none for now|leave everything to executor|no more gifts|no other gifts|move on|that's all|thats all|that is all|nothing else|skip)\b"
             is_start_no = bool(re.search(r"^(?:no|nope|nah|none|nothing|skip)(?:,.*)?$", t_lower))
             if re.search(decline_phrases, t_lower) or is_start_no:
-                # Ensure user isn't actually specifying a gift
                 if not re.search(r"\b(give|leave|bequeath|gift|donate|watch|ring|car|house|money|cash|fund|to\s+[a-z]+)\b", t_lower):
-                    return [], True, False
+                    return [], True, False, False
 
         # 2. Check for bare affirmative (user says "Yes" without describing gifts)
         bare_yes = bool(re.search(
@@ -546,12 +709,25 @@ class MockLLMProvider(BaseLLMProvider):
         ) or re.search(r"^(?:yes|yeah|yep|sure),?\s*(?:i have (?:some|a few)|i do|i would like to leave some gifts?)?$", t_lower))
 
         if bare_yes and is_gift_topic:
-            return [], False, True
+            return [], False, True, False
 
-        # 3. Extract gift items
+        # 3. Check explicit gift override pattern (e.g. "Actually, add a gift: my vintage watch to Lucas")
+        match_gift_override = re.search(
+            r"(?:actually|please|can you)?\s*(?:add|change|update|set|replace)\s+(?:a\s+)?(?:specific\s+)?(?:gift|gifts|bequest|bequests)(?:\s+to)?[:\s]+(.+)",
+            text,
+            re.IGNORECASE
+        )
+        if match_gift_override:
+            override_clause = match_gift_override.group(1).strip()
+            mA = re.search(r"(?:give|leave|bequeath|gift)?\s*(?:my\s+)?(.+?)\s+to\s+(.+)", override_clause, re.IGNORECASE)
+            if mA:
+                cand_item = self._clean_gift_item(mA.group(1).strip())
+                cand_recip = self._clean_gift_recipient(mA.group(2).strip())
+                if cand_item and cand_recip:
+                    return [GiftItem(item=cand_item, recipient=cand_recip)], False, False, False
+
+        # 4. Extract gift items
         gifts: List[GiftItem] = []
-
-        # Remove leading affirmations / conversational filler
         cleaned_text = re.sub(
             r"^(?:yes|yeah|yep|sure|ok|okay),?\s*(?:i want to|i would like to|i'd like to|please)?\s*",
             "",
@@ -559,8 +735,9 @@ class MockLLMProvider(BaseLLMProvider):
             flags=re.IGNORECASE
         ).strip()
         cleaned_text = re.sub(r"^(?:i want to|i'd like to|i wish to|please)\s+", "", cleaned_text, flags=re.IGNORECASE).strip()
+        cleaned_text = re.sub(r"^(?:actually|please)?\s*(?:change|update|set|replace)\s+(?:my\s+)?gifts\s+to[:,\s]*", "", cleaned_text, flags=re.IGNORECASE).strip()
+        cleaned_text = re.sub(r"^(?:actually|please)?\s*(?:add a gift|add gift|leave a gift|new gift)[:,\s]*", "", cleaned_text, flags=re.IGNORECASE).strip()
 
-        # Split into multiple gift clauses if separated by semicolon or ' and ' followed by gift keyword
         clauses = re.split(r";\s*|\s+and\s+(?=(?:give|leave|bequeath|donate|my\s+|to\s+))", cleaned_text, flags=re.IGNORECASE)
 
         for clause in clauses:
@@ -579,7 +756,7 @@ class MockLLMProvider(BaseLLMProvider):
                     gifts.append(GiftItem(item=item, recipient=recipient))
                     gift_found = True
 
-            # Pattern B: [item] to [recipient] (e.g. "my vintage watch to my son", "vintage watch to Lucas")
+            # Pattern B: [item] to [recipient]
             if not gift_found:
                 mB = re.search(r"^(?:my\s+)?(.+?)\s+to\s+(.+)$", clause, re.IGNORECASE)
                 if mB:
@@ -620,7 +797,7 @@ class MockLLMProvider(BaseLLMProvider):
                         gift_found = True
 
         if gifts:
-            return gifts, False, False
+            return gifts, False, False, False
 
         # Fallback if in gift topic and text has " to "
         if is_gift_topic and " to " in cleaned_text.lower():
@@ -629,12 +806,13 @@ class MockLLMProvider(BaseLLMProvider):
                 item = self._clean_gift_item(parts[0].strip())
                 recip = self._clean_gift_recipient(parts[1].strip())
                 if item and recip:
-                    return [GiftItem(item=item, recipient=recip)], False, False
+                    return [GiftItem(item=item, recipient=recip)], False, False, False
 
-        return [], False, False
+        return [], False, False, False
 
     def _clean_gift_item(self, item_str: str) -> str:
         s = item_str.strip().rstrip(".,")
+        s = re.sub(r"^(?:actually,?\s*)?(?:add a gift:?|change gifts? to:?|gift of:?)\s*", "", s, flags=re.IGNORECASE).strip()
         s = re.sub(r"^(?:my|the|a|an)\s+", "", s, flags=re.IGNORECASE).strip()
         if s:
             s = s[0].upper() + s[1:]
@@ -649,24 +827,33 @@ class MockLLMProvider(BaseLLMProvider):
 
     def _extract_additional_wishes(
         self, text: str, last_topic: Optional[str]
-    ) -> Tuple[List[str], bool, bool]:
+    ) -> Tuple[List[str], bool, bool, bool]:
         """
         Returns:
             - wishes: List of extracted wish strings
             - wishes_declined: bool (True if user declined additional wishes)
             - pending_wish_details: bool (True if user answered yes without wish details)
+            - wishes_cleared: bool (True if user explicitly cleared/removed wishes)
         """
         t = text.strip()
         t_lower = t.lower()
 
+        # Guard: If user is correcting another field, don't extract wishes!
+        if re.search(r"\b(?:change|update|correct|set|replace|add)\s+(?:my\s+)?(?:name|address|executor|representative|scope|assets|children|kids|gift|gifts)\b", t_lower):
+            return [], False, False, False
+
+        # Explicit removal of wishes
+        if re.search(r"\b(?:remove|clear|delete)\s+(?:all\s+)?(?:my\s+)?wishes\b", t_lower) or re.search(r"\b(?:change|update|set)\s+(?:to\s+)?no\s+wishes\b", t_lower):
+            return [], False, False, True
+
         is_wishes_topic = last_topic in ["WISHES", "WISHES_DETAILS"]
         has_wish_keywords = bool(re.search(
-            r"\b(cremat|scatter|funeral|memorial|burial|buried|organ donor|donate organs|wishes|directive|service|plot|ceremony)\b",
+            r"\b(wish|wishes|cremat|scatter|funeral|memorial|burial|buried|organ donor|donate organs|directive|directives|service|plot|ceremony)\b",
             t_lower
         ))
 
         if not is_wishes_topic and not has_wish_keywords:
-            return [], False, False
+            return [], False, False, False
 
         # 1. Check if user declines
         if is_wishes_topic:
@@ -674,7 +861,7 @@ class MockLLMProvider(BaseLLMProvider):
             is_start_no = bool(re.search(r"^(?:no|nope|nah|none|nothing|skip)(?:,.*)?$", t_lower))
             if re.search(decline_phrases, t_lower) or is_start_no:
                 if not re.search(r"\b(cremat|scatter|funeral|memorial|burial|buried|organ donor|donate|wishes|directive|service|plot|ceremony)\b", t_lower):
-                    return [], True, False
+                    return [], True, False, False
 
         # 2. Check for bare affirmative (user says "Yes" without describing wishes)
         bare_yes = bool(re.search(
@@ -683,9 +870,21 @@ class MockLLMProvider(BaseLLMProvider):
         ) or re.search(r"^(?:yes|yeah|yep|sure),?\s*(?:i have (?:some|a few)|i do|i have additional wishes?)?$", t_lower))
 
         if bare_yes and is_wishes_topic:
-            return [], False, True
+            return [], False, True, False
 
-        # 3. Extract wishes
+        # 3. Check explicit wish override pattern (e.g. "Actually, add a wish: I want to be cremated")
+        match_wish_override = re.search(
+            r"(?:actually|please|can you)?\s*(?:add|change|update|set|replace)\s+(?:a\s+)?(?:personal\s+)?(?:wish|wishes|directive|directives)(?:\s+to)?[:\s]+(.+)",
+            text,
+            re.IGNORECASE
+        )
+        if match_wish_override:
+            cand_wish = match_wish_override.group(1).strip().rstrip(".,")
+            if cand_wish:
+                cand_wish = cand_wish[0].upper() + cand_wish[1:]
+                return [cand_wish], False, False, False
+
+        # 4. Extract wishes
         cleaned_text = re.sub(
             r"^(?:yes|yeah|yep|sure|ok|okay),?\s*(?:i want|i wish|please|i would like)?\s*",
             "",
@@ -693,6 +892,8 @@ class MockLLMProvider(BaseLLMProvider):
             flags=re.IGNORECASE
         ).strip()
         cleaned_text = re.sub(r"^(?:additional wish(?:es)?|directive(?:s)?):\s*", "", cleaned_text, flags=re.IGNORECASE).strip()
+        cleaned_text = re.sub(r"^(?:actually|please)?\s*(?:change|update|set|replace)\s+(?:my\s+)?wishes\s+to[:,\s]*", "", cleaned_text, flags=re.IGNORECASE).strip()
+        cleaned_text = re.sub(r"^(?:actually|please)?\s*(?:add a wish|add wish|new wish)[:,\s]*", "", cleaned_text, flags=re.IGNORECASE).strip()
 
         # If in wishes topic and user provided substantive directive
         if is_wishes_topic and len(cleaned_text) >= 3:
@@ -700,7 +901,7 @@ class MockLLMProvider(BaseLLMProvider):
                 formatted_wish = cleaned_text.rstrip(".,")
                 if formatted_wish:
                     formatted_wish = formatted_wish[0].upper() + formatted_wish[1:]
-                    return [formatted_wish], False, False
+                    return [formatted_wish], False, False, False
 
         # Keyword-based fallback
         patterns = [
@@ -712,9 +913,12 @@ class MockLLMProvider(BaseLLMProvider):
             m = re.search(pat, text, re.IGNORECASE)
             if m:
                 full_match = m.group(0).strip().rstrip(".,")
-                return [full_match], False, False
+                full_match = re.sub(r"^(?:actually|please)?\s*(?:add a wish|new wish)[:,\s]*", "", full_match, flags=re.IGNORECASE).strip()
+                if full_match:
+                    full_match = full_match[0].upper() + full_match[1:]
+                    return [full_match], False, False, False
 
-        return [], False, False
+        return [], False, False, False
 
     def _simulate_state(self, current: PersonalWishesState, updates: Dict[str, Any]) -> PersonalWishesState:
         data = current.model_dump()
@@ -741,13 +945,17 @@ class MockLLMProvider(BaseLLMProvider):
         wishes_declined: bool,
         pending_wish_details: bool,
         just_added_wish: bool,
+        is_override: bool = False,
     ) -> str:
         parts = []
 
         # Acknowledgment header
         if acknowledged_parts:
             ack_str = ", ".join(acknowledged_parts)
-            parts.append(f"Got it, I've recorded {ack_str}.")
+            if is_override:
+                parts.append(f"Got it, I've updated your {ack_str}.")
+            else:
+                parts.append(f"Got it, I've recorded {ack_str}.")
         elif not ambiguities and len(history) == 0:
             parts.append("Hello! I am your Document Intake Assistant. I will help you create your Personal Wishes Document step-by-step.")
 
@@ -768,7 +976,14 @@ class MockLLMProvider(BaseLLMProvider):
             pending_wish_details=pending_wish_details,
             just_added_wish=just_added_wish,
         )
-        parts.append(next_question)
+
+        if is_override:
+            if simulated_state.is_complete():
+                parts.append(f"All required details are now in place! {next_question}")
+            else:
+                parts.append(f"Now, continuing where we left off: {next_question}")
+        else:
+            parts.append(next_question)
 
         return "\n\n".join(parts)
 

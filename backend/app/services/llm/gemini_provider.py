@@ -87,9 +87,10 @@ class GeminiLLMProvider(BaseLLMProvider):
                         "Could you please provide a valid response?"
                     )
 
-            # Context-Aware check: If asking for executor, ensure full_name was not accidentally updated
+            # Context-Aware check: If asking for executor, ensure full_name was not accidentally updated unless explicit name override
             if last_topic in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP"]:
-                if "full_name" in validated_updates and "full_name" not in user_message.lower():
+                has_name_kw = bool(re.search(r"\b(my\s+name|full\s+name|name\s+to|change\s+name|update\s+name|call\s+me)\b", user_message.lower()))
+                if "full_name" in validated_updates and not has_name_kw:
                     logger.warning("Prevented Gemini from assigning executor answer to full_name")
                     validated_updates.pop("full_name", None)
 

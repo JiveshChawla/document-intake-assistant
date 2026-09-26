@@ -24,21 +24,27 @@ STRICT VALIDATION & GUARDRAIL RULES:
    - Add a clear explanation of why the input was not accepted in the "ambiguities" list.
    - In "assistant_message", politely inform the user that their response could not be verified as a valid name, address, etc., and request a valid response.
 
-2. Context-Aware Field Mapping:
-   - Check the recent conversation history to identify the specific field the assistant just asked for!
-   - If the assistant just asked about the executor (e.g., "Who would you like to appoint as your Executor..."), any name or relationship provided MUST be mapped strictly to the "executor" object ("name" or "relationship") and MUST NEVER alter or overwrite "full_name".
-   - If the assistant just asked for residential address, map it strictly to "home_address".
+2. Non-Linear Field Updates, Overrides & Backtracking:
+   - Users are free to update, correct, or override ANY field at ANY point in the conversation, regardless of what question was just asked!
+   - If a user says "Actually, change my executor to Jane Doe", "Update my address to 10 Downing St", "Correction, I have no children", or modifies an already filled field, you MUST immediately extract that update into "proposed_state_updates".
+   - Do NOT reject an answer or get locked into a rigid sequence just because the user is updating a different section.
+   - In "assistant_message", warmly acknowledge the update (e.g. "I've updated your executor to Jane Doe.") and then seamlessly guide the user back to the next missing required field (or continue the interview naturally).
+
+3. Context-Aware Field Mapping:
+   - When the user is directly answering the assistant's previous question, map their answer to that specific field (e.g., if asking for executor name and the user replies with a name like "Jane Doe", map it strictly to the "executor" object and NEVER overwrite "full_name").
+   - If the user explicitly states they want to change their own name (e.g. "Change my name to Jane Doe"), then update "full_name".
    - If the user provides multiple valid fields at once (e.g., "I am Jane Doe living at 10 Downing St, London"), extract all valid fields into their respective keys. Reject any sub-field that is nonsensical or ambiguous.
 
-3. Handling Missing/Ambiguous Data:
+4. Handling Missing/Ambiguous Data:
    - Never invent facts or assume values. If a value is unknown or unconfirmed, omit it.
    - If the user specifies an executor relationship (e.g. "my brother") without a name, or a name without relationship, flag this ambiguity and ask for the missing detail.
    - Avoid repeatedly asking for information that has already been captured.
 
-4. Optional Sections (Gifts & Wishes):
+5. Optional Sections (Gifts & Wishes):
    - When asking if the user has specific gifts or additional wishes, if the user replies 'yes' (or gives an affirmative answer) without details, DO NOT skip or finalize. Prompt them warmly to specify what those gifts or directives are.
    - When the user describes gifts (e.g. 'my watch to my son Lucas' or 'donate my books'), extract them into specific_gifts with 'item' and 'recipient'.
    - When the user describes additional personal wishes (e.g. 'cremation and ashes scattered', 'play jazz at my funeral'), extract them into additional_wishes array.
+   - If the user says "remove all gifts" or "clear wishes", empty the respective array.
 
 You MUST respond with a JSON object strictly matching this schema:
 {
@@ -129,7 +135,13 @@ def build_gemini_prompt(
 
     topic_hint = ""
     if last_topic:
-        topic_hint = f"\nACTIVE INTAKE FOCUS: The assistant's latest question was specifically regarding: {last_topic}. Ensure answers to this prompt map contextually to that field unless explicit multi-field information or correction is stated."
+        topic_hint = (
+            f"\nACTIVE INTAKE FOCUS: The assistant's latest question was specifically regarding: {last_topic}. "
+            "Ensure direct answers to this question map contextually to that field. "
+            "However, if the user is correcting, backtracking, or updating an earlier or different field "
+            "(e.g. 'Actually change my executor to Jane Doe', 'Update my address to 10 High St', 'I have no children'), "
+            "prioritize and extract that override immediately into proposed_state_updates."
+        )
 
     prompt_parts = [
         SYSTEM_PROMPT.strip(),
