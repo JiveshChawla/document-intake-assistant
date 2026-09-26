@@ -276,3 +276,132 @@ async def test_api_end_to_end_non_linear_override_flow():
         assert d3["state"]["covers_worldwide_assets"] is True
         assert d3["state"]["executor"]["name"] == "Harry Potter"
 
+@pytest.mark.asyncio
+async def test_mid_interview_intent_change_address_pivots(mock_llm):
+    """When user says 'I want to change my address' mid-interview without providing new address."""
+    history = [
+        ChatMessage(role="assistant", content="Do you have any children?")
+    ]
+    state = PersonalWishesState(
+        full_name="Clark Kent",
+        home_address="344 Clinton St, Metropolis",
+        covers_worldwide_assets=True
+    )
+
+    # User expresses intent to change address
+    res = await mock_llm.process_turn("I want to change my address", history, state)
+
+    # Must immediately pivot and ask for the new address
+    assert "address" in res.assistant_message.lower()
+    assert "what is your new home address" in res.assistant_message.lower() or "update your residential address" in res.assistant_message.lower()
+    # Must NOT continue with children script
+    assert "children" not in res.assistant_message.lower()
+    # State updates should be empty in this turn
+    assert res.proposed_state_updates == {}
+    assert len(res.ambiguities) == 0
+
+@pytest.mark.asyncio
+async def test_mid_interview_intent_change_executor_pivots(mock_llm):
+    """When user says 'Can I change my executor?' without providing details yet."""
+    history = [
+        ChatMessage(role="assistant", content="What is your current residential home address?")
+    ]
+    state = PersonalWishesState(
+        full_name="Bruce Wayne",
+        home_address=None,
+        covers_worldwide_assets=True,
+        has_children=False,
+        executor=ExecutorInfo(name="Bob Cooper", relationship="brother")
+    )
+
+    res = await mock_llm.process_turn("Can I update my executor?", history, state)
+
+    assert "executor" in res.assistant_message.lower()
+    assert "who would you like to appoint" in res.assistant_message.lower()
+    assert "address" not in res.assistant_message.lower()
+    assert res.proposed_state_updates == {}
+    assert len(res.ambiguities) == 0
+
+@pytest.mark.asyncio
+async def test_mid_interview_intent_update_name_pivots(mock_llm):
+    """When user says 'I need to update my name' without giving the name yet."""
+    history = [
+        ChatMessage(role="assistant", content="Do you have any children?")
+    ]
+    state = PersonalWishesState(
+        full_name="Arthur Dent",
+        home_address="Cottington, UK",
+        covers_worldwide_assets=True
+    )
+
+    res = await mock_llm.process_turn("I need to update my name", history, state)
+
+    assert "name" in res.assistant_message.lower()
+    assert "full legal name" in res.assistant_message.lower()
+    assert "children" not in res.assistant_message.lower()
+    assert res.proposed_state_updates == {}
+    assert len(res.ambiguities) == 0
+
+@pytest.mark.asyncio
+async def test_api_multi_turn_edit_intent_shift_and_resume():
+    """Verify full multi-turn conversational shift: user says 'I want to change my address' -> provides address -> resumes."""
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+    from app.services.state_manager import state_manager
+
+    session_id = "test_intent_shift_api_session"
+    state_manager.clear_all()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Step 1: User gives name and initial address
+        r1 = await client.post("/api/chat", json={
+            "session_id": session_id,
+            "message": "I am John Watson living at 221B Baker St, London."
+        })
+        assert r1.status_code == 200
+        d1 = r1.json()
+        assert d1["state"]["full_name"] == "John Watson"
+        assert "221B Baker St" in d1["state"]["home_address"]
+
+        # Step 2: Assistant asked for worldwide assets. User says "I want to change my address"
+        r2 = await client.post("/api/chat", json={
+            "session_id": session_id,
+            "message": "I want to change my address"
+        })
+        assert r2.status_code == 200
+        d2 = r2.json()
+        bot_msg = d2["message"]["content"].lower()
+        # Must pivot to asking for address
+        assert "residential address" in bot_msg or "new home address" in bot_msg
+        assert "worldwide" not in bot_msg
+        # Existing state preserved
+        assert d2["state"]["full_name"] == "John Watson"
+        assert "221B Baker St" in d2["state"]["home_address"]
+
+        # Step 3: User enters new address
+        r3 = await client.post("/api/chat", json={
+            "session_id": session_id,
+            "message": "45 Marylebone High St, London"
+        })
+        assert r3.status_code == 200
+        d3 = r3.json()
+        # Address updated!
+        assert "45 Marylebone High St" in d3["state"]["home_address"]
+        # Assistant acknowledges updated address and resumes worldwide assets question
+        bot_msg3 = d3["message"]["content"].lower()
+        assert "updated" in bot_msg3
+        assert "marylebone" in bot_msg3
+        assert "worldwide" in bot_msg3 or "assets" in bot_msg3
+
+        # Step 4: User answers worldwide assets question
+        r4 = await client.post("/api/chat", json={
+            "session_id": session_id,
+            "message": "Yes, worldwide assets."
+        })
+        assert r4.status_code == 200
+        d4 = r4.json()
+        assert d4["state"]["covers_worldwide_assets"] is True
+        assert "45 Marylebone High St" in d4["state"]["home_address"]
+
+

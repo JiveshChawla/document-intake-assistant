@@ -5,7 +5,11 @@ from app.models.chat import ChatMessage
 from app.services.llm.base import BaseLLMProvider, LLMExtractionResult
 from app.services.fixtures import FIXTURES
 from app.services.validator import InputValidator
-from app.services.llm.prompts import get_last_question_topic
+from app.services.llm.prompts import (
+    get_last_question_topic,
+    detect_edit_intent,
+    get_field_pivot_prompt
+)
 
 class MockLLMProvider(BaseLLMProvider):
     """
@@ -13,6 +17,7 @@ class MockLLMProvider(BaseLLMProvider):
     Runs completely offline with zero external dependencies.
     Accurately handles:
     - Universal free-text input for names and addresses from any country worldwide
+    - Proactive mid-interview correction/edit intent detection with state pointer shifting
     - Non-linear field updates, overrides, and backtracking at any point in the interview
     - Multi-field intake in any order
     - Direct conversational answers (e.g., answering 'Yes' to children)
@@ -50,7 +55,7 @@ class MockLLMProvider(BaseLLMProvider):
 
         # 3. Detect and apply corrections (e.g., "Actually, my address is...", "Change executor to...")
         is_correction = bool(re.search(
-            r"\b(actually|change|update|correction|instead of|replace|switch|correct|modify|set my|set|add a gift|add a wish|add wish|add gift|remove all|clear all)\b",
+            r"\b(actually|change|update|correction|instead of|replace|switch|correct|modify|edit|fix|set my|set|add a gift|add a wish|add wish|add gift|remove all|clear all)\b",
             text,
             re.IGNORECASE
         ))
@@ -157,6 +162,36 @@ class MockLLMProvider(BaseLLMProvider):
         elif wishes_declined:
             acknowledged_parts.append("no additional personal wishes to add")
 
+        # 10.4 Proactive Edit/Update Intent Pivot
+        # If the user expresses an intent to change/update a specific field without providing the value yet:
+        # Pivot immediately, shift conversation focus to that field, and prompt for the new value!
+        edit_intent_field = detect_edit_intent(text)
+        intent_value_provided = False
+        if edit_intent_field == "home_address" and "home_address" in updates:
+            intent_value_provided = True
+        elif edit_intent_field == "full_name" and "full_name" in updates:
+            intent_value_provided = True
+        elif edit_intent_field == "executor" and "executor" in updates:
+            intent_value_provided = True
+        elif edit_intent_field == "covers_worldwide_assets" and "covers_worldwide_assets" in updates:
+            intent_value_provided = True
+        elif edit_intent_field == "children" and ("has_children" in updates or "children" in updates):
+            intent_value_provided = True
+        elif edit_intent_field == "specific_gifts" and "specific_gifts" in updates:
+            intent_value_provided = True
+        elif edit_intent_field == "additional_wishes" and "additional_wishes" in updates:
+            intent_value_provided = True
+
+        if edit_intent_field and not intent_value_provided and not updates:
+            pivot_msg = get_field_pivot_prompt(edit_intent_field)
+            return LLMExtractionResult(
+                assistant_message=pivot_msg,
+                proposed_state_updates={},
+                ambiguities=[],
+                confidence=0.95,
+                raw_model_response=f"[MOCK_INFERENCE] Proactive edit intent detected for '{edit_intent_field}'. Prompting user for new value."
+            )
+
         # 10.5 Determine if this turn is an override of an existing/out-of-order field
         is_override = False
         if is_correction:
@@ -224,12 +259,12 @@ class MockLLMProvider(BaseLLMProvider):
         self, text: str, current_state: PersonalWishesState, last_topic: Optional[str]
     ) -> Tuple[Optional[str], Optional[str]]:
         # Guard: If user is explicitly correcting another field, NEVER extract name!
-        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove)\s+(?:my\s+)?(?:address|executor|representative|scope|assets|children|kids|gift|gifts|wish|wishes)\b", text, re.IGNORECASE):
+        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove|edit|modify|fix|revise)\s+(?:my\s+)?(?:address|executor|representative|scope|assets|children|kids|gift|gifts|wish|wishes)\b", text, re.IGNORECASE):
             return None, None
 
         # 1. Explicit name override / correction (can occur ANY time regardless of last_topic)
         override_patterns = [
-            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace|fix)\s+(?:my\s+)?(?:full\s+)?name\s+(?:to|with|as|is)?\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.)|\s*$)",
+            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace|fix|modify|edit)\s+(?:my\s+)?(?:full\s+)?name\s+(?:to|with|as|is)?\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.)|\s*$)",
             r"(?:actually|please)?\s*(?:my\s+)?(?:full\s+)?name\s+is\s+actually\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.)|\s*$)",
             r"(?:actually|please)?\s*(?:call me|refer to me as)\s+([A-Za-zÀ-ÿ\s\-\'\.]+?)(?=\s+(?:living|residing|live|reside|from|at|and|,|\.)|\s*$)",
         ]
@@ -307,12 +342,12 @@ class MockLLMProvider(BaseLLMProvider):
         self, text: str, current_state: PersonalWishesState, last_topic: Optional[str], has_name: bool = False
     ) -> Tuple[Optional[str], Optional[str]]:
         # Guard: If user is explicitly correcting another field, NEVER extract address!
-        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove)\s+(?:my\s+)?(?:name|executor|representative|scope|assets|children|kids|gift|gifts|wish|wishes)\b", text, re.IGNORECASE):
+        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove|edit|modify|fix|revise)\s+(?:my\s+)?(?:name|executor|representative|scope|assets|children|kids|gift|gifts|wish|wishes)\b", text, re.IGNORECASE):
             return None, None
 
         # 1. Explicit address override patterns (can occur ANY time regardless of last_topic)
         override_patterns = [
-            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace|fix)\s+(?:my\s+)?(?:home\s+)?address\s+(?:to|with|as|is)?\s+([^.]+)",
+            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace|fix|modify|edit)\s+(?:my\s+)?(?:home\s+)?address\s+(?:to|with|as|is)?\s+([^.]+)",
             r"(?:actually|please)?\s*(?:my\s+)?(?:home\s+)?address\s+is\s+(?:actually\s+|now\s+)?([^.]+)",
             r"(?:actually|please)?\s*(?:i\s+(?:actually\s+)?(?:live|reside)\s+at)\s+([^.]+)",
         ]
@@ -377,13 +412,13 @@ class MockLLMProvider(BaseLLMProvider):
     def _extract_asset_scope(self, text: str, last_topic: Optional[str]) -> Tuple[Optional[bool], Optional[str]]:
         t = text.lower()
         # Guard: If user is correcting another field, don't trigger asset scope unless scope is mentioned
-        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove)\s+(?:my\s+)?(?:name|address|executor|representative|children|kids|gift|gifts|wish|wishes)\b", t):
+        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove|edit|modify|fix|revise)\s+(?:my\s+)?(?:name|address|executor|representative|children|kids|gift|gifts|wish|wishes)\b", t):
             return None, None
 
         # 1. Explicit asset scope overrides (can occur ANY time)
-        if re.search(r"\b(?:change|update|switch|set|make)\b.*\b(?:domestic|local)\b", t) or re.search(r"\b(?:change|update|switch|set)\s+(?:asset\s+scope\s+to\s+)?(?:domestic|domestic\s+only|local\s+only)\b", t):
+        if re.search(r"\b(?:change|update|switch|set|make|edit|modify)\b.*\b(?:domestic|local)\b", t) or re.search(r"\b(?:change|update|switch|set|edit|modify)\s+(?:asset\s+scope\s+to\s+)?(?:domestic|domestic\s+only|local\s+only)\b", t):
             return False, None
-        if re.search(r"\b(?:change|update|switch|set|make)\b.*\b(?:worldwide|global|international)\b", t) or re.search(r"\b(?:change|update|switch|set)\s+(?:asset\s+scope\s+to\s+)?(?:worldwide|global)\b", t):
+        if re.search(r"\b(?:change|update|switch|set|make|edit|modify)\b.*\b(?:worldwide|global|international)\b", t) or re.search(r"\b(?:change|update|switch|set|edit|modify)\s+(?:asset\s+scope\s+to\s+)?(?:worldwide|global)\b", t):
             return True, None
 
         # 2. Ambiguity check: user expresses hesitation / doubt regarding foreign property
@@ -413,20 +448,20 @@ class MockLLMProvider(BaseLLMProvider):
         t = text.lower()
 
         # Guard: If user is explicitly correcting another field, don't extract children!
-        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove)\s+(?:my\s+)?(?:name|address|executor|representative|scope|assets|gift|gifts|wish|wishes)\b", t):
+        if re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove|edit|modify|fix|revise)\s+(?:my\s+)?(?:name|address|executor|representative|scope|assets|gift|gifts|wish|wishes)\b", t):
             return None, None, None
 
         # 1. Explicit negative overrides (can occur ANY time)
         if (
-            re.search(r"\b(?:change|update|set|switch)\s+(?:my\s+)?(?:children|kids)\s+to\s+(?:none|no|zero|empty)\b", t)
+            re.search(r"\b(?:change|update|set|switch|edit|modify)\s+(?:my\s+)?(?:children|kids)\s+to\s+(?:none|no|zero|empty)\b", t)
             or re.search(r"\b(?:remove|delete|clear)\s+(?:all\s+)?(?:my\s+)?(?:children|kids)\b", t)
-            or (re.search(r"\b(actually|correction|change|update)\b", t) and re.search(r"\b(no children|don't have (?:any )?children|do not have (?:any )?children|no kids|zero children|without children)\b", t))
+            or (re.search(r"\b(actually|correction|change|update|edit|modify)\b", t) and re.search(r"\b(no children|don't have (?:any )?children|do not have (?:any )?children|no kids|zero children|without children)\b", t))
         ):
             return False, [], None
 
         # 2. Explicit positive overrides (can occur ANY time)
         match_child_override = re.search(
-            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace)\s+(?:my\s+)?(?:children|kids)\s+(?:to|with|as|is)?\s+([A-Za-zÀ-ÿ\s,\&and]+)",
+            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace|edit|modify)\s+(?:my\s+)?(?:children|kids)\s+(?:to|with|as|is)?\s+([A-Za-zÀ-ÿ\s,\&and]+)",
             text,
             re.IGNORECASE
         )
@@ -444,7 +479,7 @@ class MockLLMProvider(BaseLLMProvider):
 
         # 4. STRICT GUARD 2: If current_state.has_children is already set, do not alter it unless explicit correction!
         if current_state.has_children is not None:
-            if not re.search(r"\b(actually|change|correction|update)\b", t):
+            if not re.search(r"\b(actually|change|correction|update|edit|modify)\b", t):
                 return None, None, None
 
         # 5. Negative phrases (no children)
@@ -488,7 +523,6 @@ class MockLLMProvider(BaseLLMProvider):
         names = []
         for p in raw:
             cleaned = p.strip().rstrip(".,")
-            # Remove descriptors like "my son", "my daughter" and connectives "and", "&"
             cleaned = re.sub(r"^(?:and|&)\s+", "", cleaned, flags=re.IGNORECASE).strip()
             cleaned = re.sub(r"^(?:my\s+son|my\s+daughter|son|daughter)\s+", "", cleaned, flags=re.IGNORECASE).strip()
             cleaned = re.sub(r"^(?:and|&)\s+", "", cleaned, flags=re.IGNORECASE).strip()
@@ -504,14 +538,14 @@ class MockLLMProvider(BaseLLMProvider):
         t = text.lower()
         # Guard: If user is discussing another field or making an override for another field, NEVER extract executor!
         if (
-            re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove)\s+(?:my\s+)?(?:name|address|scope|assets|children|kids|gift|gifts|wish|wishes)\b", t)
+            re.search(r"\b(?:change|update|correct|set|replace|add|clear|remove|edit|modify|fix|revise)\s+(?:my\s+)?(?:name|address|scope|assets|children|kids|gift|gifts|wish|wishes)\b", t)
             or re.search(r"\b(wish|wishes|gift|gifts|cremat|scatter|funeral|memorial|burial|organ donor|donate organs)\b", t)
         ):
             return None, None
 
         # 1. Explicit executor override patterns (can occur ANY time)
         match_exec_override = re.search(
-            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace|switch)\s+(?:my\s+)?(?:executor|personal representative)\s+(?:to|with|as|is)?\s+([^.]+)",
+            r"(?:actually|please|can you)?\s*(?:change|update|correct|set|replace|switch|edit|modify)\s+(?:my\s+)?(?:executor|personal representative)\s+(?:to|with|as|is)?\s+([^.]+)",
             text,
             re.IGNORECASE
         )
@@ -629,6 +663,9 @@ class MockLLMProvider(BaseLLMProvider):
                     return None, f"The executor name '{clean}' does not appear to be a valid legal name ({reason}). Please provide their full legal name."
 
         # Check existing executor values for merging
+        if not name and not relationship:
+            return None, None
+
         existing_name = current_state.executor.name if current_state.executor else None
         existing_rel = current_state.executor.relationship if current_state.executor else None
 
@@ -681,7 +718,7 @@ class MockLLMProvider(BaseLLMProvider):
         t_lower = t.lower()
 
         # Guard: If user is correcting another field, don't extract gifts!
-        if re.search(r"\b(?:change|update|correct|set|replace|add)\s+(?:my\s+)?(?:name|address|executor|representative|scope|assets|children|kids|wish|wishes)\b", t_lower):
+        if re.search(r"\b(?:change|update|correct|set|replace|add|edit|modify|fix|revise)\s+(?:my\s+)?(?:name|address|executor|representative|scope|assets|children|kids|wish|wishes)\b", t_lower):
             return [], False, False, False
 
         # Explicit removal of gifts
@@ -713,7 +750,7 @@ class MockLLMProvider(BaseLLMProvider):
 
         # 3. Check explicit gift override pattern (e.g. "Actually, add a gift: my vintage watch to Lucas")
         match_gift_override = re.search(
-            r"(?:actually|please|can you)?\s*(?:add|change|update|set|replace)\s+(?:a\s+)?(?:specific\s+)?(?:gift|gifts|bequest|bequests)(?:\s+to)?[:\s]+(.+)",
+            r"(?:actually|please|can you)?\s*(?:add|change|update|set|replace|edit|modify)\s+(?:a\s+)?(?:specific\s+)?(?:gift|gifts|bequest|bequests)(?:\s+to)?[:\s]+(.+)",
             text,
             re.IGNORECASE
         )
@@ -735,7 +772,7 @@ class MockLLMProvider(BaseLLMProvider):
             flags=re.IGNORECASE
         ).strip()
         cleaned_text = re.sub(r"^(?:i want to|i'd like to|i wish to|please)\s+", "", cleaned_text, flags=re.IGNORECASE).strip()
-        cleaned_text = re.sub(r"^(?:actually|please)?\s*(?:change|update|set|replace)\s+(?:my\s+)?gifts\s+to[:,\s]*", "", cleaned_text, flags=re.IGNORECASE).strip()
+        cleaned_text = re.sub(r"^(?:actually|please)?\s*(?:change|update|set|replace|edit|modify)\s+(?:my\s+)?gifts\s+to[:,\s]*", "", cleaned_text, flags=re.IGNORECASE).strip()
         cleaned_text = re.sub(r"^(?:actually|please)?\s*(?:add a gift|add gift|leave a gift|new gift)[:,\s]*", "", cleaned_text, flags=re.IGNORECASE).strip()
 
         clauses = re.split(r";\s*|\s+and\s+(?=(?:give|leave|bequeath|donate|my\s+|to\s+))", cleaned_text, flags=re.IGNORECASE)
@@ -839,7 +876,7 @@ class MockLLMProvider(BaseLLMProvider):
         t_lower = t.lower()
 
         # Guard: If user is correcting another field, don't extract wishes!
-        if re.search(r"\b(?:change|update|correct|set|replace|add)\s+(?:my\s+)?(?:name|address|executor|representative|scope|assets|children|kids|gift|gifts)\b", t_lower):
+        if re.search(r"\b(?:change|update|correct|set|replace|add|edit|modify|fix|revise)\s+(?:my\s+)?(?:name|address|executor|representative|scope|assets|children|kids|gift|gifts)\b", t_lower):
             return [], False, False, False
 
         # Explicit removal of wishes
@@ -874,7 +911,7 @@ class MockLLMProvider(BaseLLMProvider):
 
         # 3. Check explicit wish override pattern (e.g. "Actually, add a wish: I want to be cremated")
         match_wish_override = re.search(
-            r"(?:actually|please|can you)?\s*(?:add|change|update|set|replace)\s+(?:a\s+)?(?:personal\s+)?(?:wish|wishes|directive|directives)(?:\s+to)?[:\s]+(.+)",
+            r"(?:actually|please|can you)?\s*(?:add|change|update|set|replace|edit|modify)\s+(?:a\s+)?(?:personal\s+)?(?:wish|wishes|directive|directives)(?:\s+to)?[:\s]+(.+)",
             text,
             re.IGNORECASE
         )
@@ -892,7 +929,7 @@ class MockLLMProvider(BaseLLMProvider):
             flags=re.IGNORECASE
         ).strip()
         cleaned_text = re.sub(r"^(?:additional wish(?:es)?|directive(?:s)?):\s*", "", cleaned_text, flags=re.IGNORECASE).strip()
-        cleaned_text = re.sub(r"^(?:actually|please)?\s*(?:change|update|set|replace)\s+(?:my\s+)?wishes\s+to[:,\s]*", "", cleaned_text, flags=re.IGNORECASE).strip()
+        cleaned_text = re.sub(r"^(?:actually|please)?\s*(?:change|update|set|replace|edit|modify)\s+(?:my\s+)?wishes\s+to[:,\s]*", "", cleaned_text, flags=re.IGNORECASE).strip()
         cleaned_text = re.sub(r"^(?:actually|please)?\s*(?:add a wish|add wish|new wish)[:,\s]*", "", cleaned_text, flags=re.IGNORECASE).strip()
 
         # If in wishes topic and user provided substantive directive

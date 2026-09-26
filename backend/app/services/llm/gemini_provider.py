@@ -1,10 +1,17 @@
 import json
+import re
 import logging
 from typing import List
 from app.models.state import PersonalWishesState
 from app.models.chat import ChatMessage
 from app.services.llm.base import BaseLLMProvider, LLMExtractionResult
-from app.services.llm.prompts import SYSTEM_PROMPT, build_gemini_prompt, get_last_question_topic
+from app.services.llm.prompts import (
+    SYSTEM_PROMPT, 
+    build_gemini_prompt, 
+    get_last_question_topic,
+    detect_edit_intent,
+    get_field_pivot_prompt
+)
 from app.services.validator import InputValidator
 
 logger = logging.getLogger(__name__)
@@ -67,8 +74,6 @@ class GeminiLLMProvider(BaseLLMProvider):
             # -----------------------------------------------------------------
             # Strict Schema & Input Validation Enforcement
             # -----------------------------------------------------------------
-            # Even if the LLM proposed an invalid or gibberish input, filter it
-            # out, record the rejection in ambiguities, and keep the field empty.
             validated_updates, rejection_warnings = InputValidator.validate_proposed_updates(
                 raw_proposed,
                 user_message=user_message
@@ -79,7 +84,6 @@ class GeminiLLMProvider(BaseLLMProvider):
                 all_ambiguities.extend(rejection_warnings)
                 logger.warning(f"Gemini proposed updates contained invalid entries that were rejected: {rejection_warnings}")
                 
-                # If assistant message didn't already reject or clarify, update it politely
                 lower_msg = assistant_msg.lower()
                 if not any(w in lower_msg for w in ["valid", "invalid", "clarify", "verify", "recognize", "re-enter", "please provide"]):
                     assistant_msg = (
@@ -93,6 +97,27 @@ class GeminiLLMProvider(BaseLLMProvider):
                 if "full_name" in validated_updates and not has_name_kw:
                     logger.warning("Prevented Gemini from assigning executor answer to full_name")
                     validated_updates.pop("full_name", None)
+
+            # -----------------------------------------------------------------
+            # Proactive Mid-Interview Edit Intent Guard
+            # -----------------------------------------------------------------
+            edit_intent = detect_edit_intent(user_message)
+            if edit_intent and not validated_updates:
+                lower_msg = assistant_msg.lower()
+                intent_keywords = {
+                    "home_address": ["address", "residential", "live"],
+                    "full_name": ["name", "legal name"],
+                    "executor": ["executor", "representative"],
+                    "covers_worldwide_assets": ["asset", "worldwide", "domestic"],
+                    "children": ["child", "children", "kid"],
+                    "specific_gifts": ["gift", "gifts", "bequest"],
+                    "additional_wishes": ["wish", "wishes", "directive"],
+                }
+                kws = intent_keywords.get(edit_intent, [])
+                if not any(kw in lower_msg for kw in kws):
+                    logger.info(f"Gemini response did not pivot to edit intent '{edit_intent}'. Overriding response with focused pivot prompt.")
+                    assistant_msg = get_field_pivot_prompt(edit_intent)
+                    all_ambiguities = []
 
             return LLMExtractionResult(
                 assistant_message=assistant_msg,

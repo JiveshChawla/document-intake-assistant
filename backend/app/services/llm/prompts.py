@@ -24,23 +24,28 @@ STRICT VALIDATION & GUARDRAIL RULES:
    - Add a clear explanation of why the input was not accepted in the "ambiguities" list.
    - In "assistant_message", politely inform the user that their response could not be verified as a valid name, address, etc., and request a valid response.
 
-2. Non-Linear Field Updates, Overrides & Backtracking:
+2. Proactive Mid-Interview Edit & Correction Intent Handling:
+   - If the user expresses an intent to change, update, or edit a previously provided field (e.g., address, name, executor), do not ignore it. Acknowledge the request to modify that field and prompt the user to enter the new value immediately.
+   - For example, if a user says "I want to change my address" or "Can I update my executor?" while on a different question, do NOT continue with the current question script. Immediately pivot, acknowledge the requested field change (e.g., "Certainly, let's update your residential address. What is your new home address?"), and prompt for the new value.
+   - Keep "proposed_state_updates" empty for that turn until the user provides the new value in the subsequent turn.
+
+3. Non-Linear Field Updates, Overrides & Backtracking:
    - Users are free to update, correct, or override ANY field at ANY point in the conversation, regardless of what question was just asked!
-   - If a user says "Actually, change my executor to Jane Doe", "Update my address to 10 Downing St", "Correction, I have no children", or modifies an already filled field, you MUST immediately extract that update into "proposed_state_updates".
+   - If a user says "Actually, change my executor to Jane Doe", "Update my address to 10 Downing St", "Correction, I have no children", or modifies an already filled field while supplying the new value, you MUST immediately extract that update into "proposed_state_updates".
    - Do NOT reject an answer or get locked into a rigid sequence just because the user is updating a different section.
    - In "assistant_message", warmly acknowledge the update (e.g. "I've updated your executor to Jane Doe.") and then seamlessly guide the user back to the next missing required field (or continue the interview naturally).
 
-3. Context-Aware Field Mapping:
+4. Context-Aware Field Mapping:
    - When the user is directly answering the assistant's previous question, map their answer to that specific field (e.g., if asking for executor name and the user replies with a name like "Jane Doe", map it strictly to the "executor" object and NEVER overwrite "full_name").
    - If the user explicitly states they want to change their own name (e.g. "Change my name to Jane Doe"), then update "full_name".
    - If the user provides multiple valid fields at once (e.g., "I am Jane Doe living at 10 Downing St, London"), extract all valid fields into their respective keys. Reject any sub-field that is nonsensical or ambiguous.
 
-4. Handling Missing/Ambiguous Data:
+5. Handling Missing/Ambiguous Data:
    - Never invent facts or assume values. If a value is unknown or unconfirmed, omit it.
    - If the user specifies an executor relationship (e.g. "my brother") without a name, or a name without relationship, flag this ambiguity and ask for the missing detail.
    - Avoid repeatedly asking for information that has already been captured.
 
-5. Optional Sections (Gifts & Wishes):
+6. Optional Sections (Gifts & Wishes):
    - When asking if the user has specific gifts or additional wishes, if the user replies 'yes' (or gives an affirmative answer) without details, DO NOT skip or finalize. Prompt them warmly to specify what those gifts or directives are.
    - When the user describes gifts (e.g. 'my watch to my son Lucas' or 'donate my books'), extract them into specific_gifts with 'item' and 'recipient'.
    - When the user describes additional personal wishes (e.g. 'cremation and ashes scattered', 'play jazz at my funeral'), extract them into additional_wishes array.
@@ -58,6 +63,72 @@ You MUST respond with a JSON object strictly matching this schema:
   ]
 }
 """
+
+def detect_edit_intent(text: str) -> Optional[str]:
+    """
+    Detects if the user expresses an intent to change, update, or edit a specific field.
+    Returns the field key (e.g. 'home_address', 'full_name', 'executor', etc.) or None.
+    """
+    t = text.lower().strip()
+
+    # Check for change/update/edit verbs
+    has_edit_verb = bool(re.search(
+        r"\b(change|update|edit|modify|fix|correct|revise|replace|switch|adjust|re-do|redo)\b",
+        t
+    ))
+    if not has_edit_verb:
+        return None
+
+    # 1. Address
+    if re.search(r"\b(?:change|update|edit|modify|fix|correct|revise)\b.*\b(?:address|home\s+address|residence|where\s+i\s+live|street)\b", t):
+        return "home_address"
+
+    # 2. Executor (checked before name so 'executor name' maps to executor)
+    if re.search(r"\b(?:change|update|edit|modify|fix|correct|replace|switch)\b.*\b(?:executor|personal\s+representative|representative)\b", t):
+        return "executor"
+
+    # 3. Children (checked before name so 'children names' maps to children)
+    if re.search(r"\b(?:change|update|edit|modify|fix)\b.*\b(?:children|kids|child)\b", t):
+        return "children"
+
+    # 4. Asset Jurisdiction / Scope
+    if re.search(r"\b(?:change|update|edit|modify|switch)\b.*\b(?:asset|assets|scope|jurisdiction|worldwide|domestic)\b", t):
+        return "covers_worldwide_assets"
+
+    # 5. Principal Full Name
+    if re.search(r"\b(?:change|update|edit|modify|fix|correct|revise)\b.*\b(?:name|full\s+name|legal\s+name)\b", t):
+        return "full_name"
+
+    # 6. Specific Gifts
+    if re.search(r"\b(?:change|update|edit|modify)\b.*\b(?:gifts?|bequests?)\b", t):
+        return "specific_gifts"
+
+    # 7. Additional Wishes
+    if re.search(r"\b(?:change|update|edit|modify)\b.*\b(?:wishes|directives|funeral)\b", t):
+        return "additional_wishes"
+
+    # 8. General edit intent
+    if re.search(r"\b(?:change|update|edit|modify|fix|correct)\s+(?:something|a\s+detail|information|my\s+details|my\s+answers|a\s+field)\b", t) or re.search(r"^(?:can\s+i\s+)?(?:make\s+a\s+change|change\s+something)\??$", t):
+        return "general"
+
+    return None
+
+def get_field_pivot_prompt(field: str) -> str:
+    """
+    Returns the focused conversational follow-up prompt when a user expresses
+    an intent to edit/update a field without providing the new value in the same turn.
+    """
+    prompts = {
+        "home_address": "Certainly, let's update your residential address. What is your new home address?",
+        "full_name": "Certainly, let's update your legal name. What is your full legal name?",
+        "executor": "Certainly, let's update your appointed Executor. Who would you like to appoint as your Executor, and what is their relationship to you?",
+        "covers_worldwide_assets": "Certainly, let's update your asset coverage. Should your Personal Wishes Document cover all worldwide assets, or strictly domestic assets in your country of residence?",
+        "children": "Certainly, let's update your children details. Do you have any children, and if so, what are their full names?",
+        "specific_gifts": "Certainly, let's update your specific gifts. Please describe the gifts or bequests you would like to include or change, and who should receive each one.",
+        "additional_wishes": "Certainly, let's update your additional wishes. What personal directives, funeral arrangements, or memorial preferences would you like to include or change?",
+        "general": "Certainly! Which detail would you like to update? (You can change your full name, home address, worldwide assets, children, executor, specific gifts, or additional wishes)."
+    }
+    return prompts.get(field, "Certainly, let's update that information. What new details would you like to provide?")
 
 def get_last_question_topic(history: List[ChatMessage]) -> Optional[str]:
     """Finds what question the assistant asked in the latest turn."""
@@ -138,8 +209,10 @@ def build_gemini_prompt(
         topic_hint = (
             f"\nACTIVE INTAKE FOCUS: The assistant's latest question was specifically regarding: {last_topic}. "
             "Ensure direct answers to this question map contextually to that field. "
-            "However, if the user is correcting, backtracking, or updating an earlier or different field "
-            "(e.g. 'Actually change my executor to Jane Doe', 'Update my address to 10 High St', 'I have no children'), "
+            "IMPORTANT: If the user expresses an intent to change, update, or edit a previously provided field "
+            "(e.g., 'I want to change my address', 'update my name', 'edit my executor') without providing the value yet, "
+            "do not ignore it. Acknowledge the request to modify that field and prompt the user to enter the new value immediately. "
+            "If the user provided the new value directly (e.g., 'Actually change my executor to Jane Doe'), "
             "prioritize and extract that override immediately into proposed_state_updates."
         )
 
