@@ -8,6 +8,9 @@
 [![Gemini](https://img.shields.io/badge/Google_Gemini-1.5_Flash-4285F4?style=flat&logo=google&logoColor=white)](https://ai.google.dev)
 [![Pytest](https://img.shields.io/badge/Pytest-77%20Passed-green?style=flat&logo=pytest&logoColor=white)](https://docs.pytest.org)
 
+**Live Production Deployment:** [🌐 View Live Application on Vercel](https://document-intake-assistant-seven.vercel.app/)  
+**GitHub Repository:** [📂 View Source Code on GitHub](https://github.com/JiveshChawla/document-intake-assistant)
+
 A production-grade, enterprise legal-tech conversational intake assistant that conducts guided estate and testamentary interviews. It dynamically extracts user inputs into a validated **Personal Wishes Document** (Last Will & Personal Directives), maintains a single source of truth structured JSON state backed by SQLite persistence, and renders a live, real-time draft paper with isolated print/PDF export.
 
 > **LEGAL NOTICE & DISCLAIMER:**  
@@ -15,11 +18,43 @@ A production-grade, enterprise legal-tech conversational intake assistant that c
 
 ---
 
+## 📸 Screenshots & Visual Walkthrough
+
+Below are key views showcasing the user experience, real-time document drafting, and technical depth of the application:
+
+### 1. Professional Landing Page
+*High-end enterprise landing page featuring bold typography, vibrant accent badges, a live-turn mockup preview, and a 4-card feature value proposition grid.*
+
+![Landing Page](./screenshots/landing-page.png)
+
+---
+
+### 2. Conversational Intake & Split-Screen Workspace
+*Multi-turn conversational intake interface running side-by-side with the 3-tab workspace (Intake Completeness, Live Legal Paper Draft, and Structured JSON State).*
+
+![Chat and Preview Workspace](./screenshots/chat-and-preview.png)
+
+---
+
+### 3. Non-Linear Mid-Interview Field Correction
+*Proactive correction handling: The user updates their address mid-interview out of order, and the state manager instantly pivots and updates the field.*
+
+![Mid-Interview Correction](./screenshots/mid-interview-edit.png)
+
+---
+
+### 4. Isolated Print / PDF Legal Export View
+*Isolated print view: Suppresses all application UI chrome and formats the document on clean parchment-style serif typography with protected signature and witness blocks.*
+
+![Print and PDF View](./screenshots/print-pdf-view.png)
+
+---
+
 ## 🏛️ System Architecture
 
 The application is structured as a full-stack monorepo featuring decoupled state management, pluggable LLM orchestration, SQLite persistence, and an enterprise split-screen frontend:
 
-```
+```plaintext
 document-intake-assistant/
 ├── backend/
 │   ├── app/
@@ -89,6 +124,7 @@ document-intake-assistant/
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── tailwind.config.js
+├── vercel.json                      # Multi-service Vercel deployment configuration
 ├── README.md                        # Project documentation
 ├── AI_LOG.md                        # Development prompts, iterations, and corrections log
 └── PRODUCTION_NOTES.md              # Production hardening, security, and scalability guide
@@ -98,31 +134,31 @@ document-intake-assistant/
 
 ## 🔑 Core Capabilities & Engineering Innovations
 
-### 1. State Separation & SQLite Persistence
+### State Separation & SQLite Persistence
 - **Single Source of Truth:** Structured data is strictly isolated from unstructured chat history using the `PersonalWishesState` Pydantic model.
 - **Relational Persistence:** Backed by SQLite (`app.db`) via SQLAlchemy. Conversation messages, turn timestamps, and validated structured JSON state persist across sessions and server restarts with zero in-memory data loss.
-- **Deterministic Delta Validation:** The LLM produces *candidate deltas*, but only the backend `StateManager` commits changes to the database after verifying field invariants.
+- **Deterministic Delta Validation:** The LLM produces candidate deltas, but only the backend `StateManager` commits changes to the database after verifying field invariants.
 
-### 2. Context-Aware Extraction & Guardrails
-- **Turn-Specific Field Mapping:** The extraction engine evaluates what question the assistant *just asked*. When questioning the user about an executor, responses strictly map to the `executor` object (`name` and `relationship`) and never inadvertently alter `full_name`.
+### Context-Aware Extraction & Guardrails
+- **Turn-Specific Field Mapping:** The extraction engine evaluates what question the assistant just asked. When questioning the user about an executor, responses strictly map to the executor object (`name` and `relationship`) and never inadvertently alter `full_name`.
 - **Strict Hallucination & Gibberish Rejection:** Inputs containing nonsensical strings or random keyboard mashes are rejected; the state field remains unconfirmed/empty and the assistant politely asks for valid clarification.
 - **Universal Address Acceptance:** Robust address recognition accommodates global formats (European, North American, Asian) without rejecting valid international residences.
 
-### 3. Non-Linear Overrides & Mid-Interview Corrections
+### Non-Linear Overrides & Mid-Interview Corrections
 - **Proactive Edit Intent Detection:** Users are never locked into a rigid step-by-step sequence. At any point, a user can say *"Actually, change my address to London"* or *"Update my executor to Jane Doe"*.
 - **Focus Shift State Machine:** The router detects the correction intent, acknowledges the requested modification, captures the new value, immediately updates the structured state, and seamlessly resumes incomplete required questions.
 - **Dependency Invariant Protection:** If `has_children` is toggled from `true` to `false`, dependent children lists are automatically purged to prevent stale orphan data.
 
-### 4. Optional Fields Multi-Turn Handling
+### Optional Fields Multi-Turn Handling
 - **Specific Gifts & Additional Wishes:** If the assistant asks about specific gifts or wishes, affirmative answers (e.g., *"Yes, my vintage watch to my son"* or *"Yes"*) are captured accurately. If the user replies *"Yes"* without details, the assistant prompts them to specify rather than skipping ahead.
 
-### 5. High-End Modern Frontend & Design System
+### High-End Modern Frontend & Design System
 - **Hero & Landing Page:** High-impact landing page featuring bold gradient typography, vibrant accent badges, interactive live-turn mockup cards, and a 4-card feature value proposition grid.
 - **Organized Tabbed Workspace (Right Panel):**
   - **Tab 1: Intake Completeness & Edit:** Progress bar, percentage gauge, missing field warnings, and inline edit cards.
   - **Tab 2: Live Document Draft:** Real-time formal parchment legal paper preview with serif typography, legal clauses, execution block, and raw Markdown source toggle.
   - **Tab 3: Structured JSON State:** Clean JSON tree inspector with direct manual payload editor modal.
-- **Light & Dark Mode Support:** Theme toggle seamlessly switches between an elegant dark slate palette (`slate-900`/`slate-950`) with glowing violet accents and a vibrant enterprise light palette with localStorage persistence.
+- **Light & Dark Mode Support:** Theme toggle seamlessly switches between an elegant dark slate palette (`slate-900`/`slate-950`) with glowing violet accents and a vibrant enterprise light palette with localStorage memory.
 - **Isolated Clean Print / PDF Export:** Dedicated `@media print` styling isolates the legal document container element, hides all UI chrome (chat sidebar, navigation headers, tabs, buttons, modals), un-constrains multi-page scroll viewports, and protects signature and witness blocks against awkward page splits.
 
 ---
@@ -235,13 +271,13 @@ npm run build
 
 The application implements the **Strategy Pattern** via `BaseLLMProvider`. You can switch providers at any time without changing application logic:
 
-### 1. Offline Deterministic Mock (Default)
+### Offline Deterministic Mock (Default)
 Runs with no external API calls, offline-ready, and ideal for automated testing and CI:
 ```env
 LLM_PROVIDER=mock
 ```
 
-### 2. Google Gemini (Recommended for Production LLM)
+### Google Gemini (Recommended for Production LLM)
 Uses the official Google GenAI SDK with structured prompt schemas and guardrails:
 ```env
 LLM_PROVIDER=gemini
@@ -249,7 +285,7 @@ GEMINI_API_KEY=AIzaSy...your-gemini-api-key
 GEMINI_MODEL=gemini-1.5-flash
 ```
 
-### 3. OpenAI
+### OpenAI
 Supports structured outputs via OpenAI JSON mode:
 ```env
 LLM_PROVIDER=openai
@@ -271,15 +307,6 @@ OPENAI_MODEL=gpt-4o-mini
 | `POST` | `/reset` | Clears conversation history and resets structured state to initial defaults |
 | `PUT` | `/state/manual-edit` | Direct manual override of structured state JSON with validation |
 | `GET` | `/fixtures` | Lists pre-configured test fixtures (valid, ambiguous, malformed inputs) |
-
----
-
-## 🖨️ PDF & Print Export
-
-When viewing the live document draft, clicking **"Print / PDF"** triggers an isolated print view:
-- **Clean Document Isolation:** All application chrome (chat sidebar, navigation bar, tab selector, action buttons, modals) is cleanly suppressed using CSS `@media print`.
-- **Typographic Fidelity:** Formatted on a clean white background using `'Newsreader'` / `'Georgia'` serif typography with standard 20mm/18mm legal margins.
-- **Page Break Guardrails:** Enforces `break-inside: avoid` on the execution section, signature blocks, and 2-column witness attestation grid to prevent disjointed signatures across pages.
 
 ---
 
