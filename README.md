@@ -25,7 +25,8 @@ Below are key views showcasing the user experience, real-time document drafting,
 ### 1. Professional Landing Page
 *High-end enterprise landing page featuring bold typography, vibrant accent badges, a live-turn mockup preview, and a 4-card feature value proposition grid.*
 
-![Landing Page](./screenshots/landing-page.png)
+<img width="1917" height="910" alt="image" src="https://github.com/user-attachments/assets/092d3473-8cd1-443b-8eea-720eaee892fa" />
+(./screenshots/landing-page.png)
 
 ---
 
