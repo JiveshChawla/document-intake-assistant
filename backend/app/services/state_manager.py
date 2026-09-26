@@ -4,6 +4,7 @@ from typing import Dict, Any, List, Tuple, Optional
 from pydantic import ValidationError
 from app.models.state import PersonalWishesState, ExecutorInfo, GiftItem
 from app.models.chat import ChatMessage
+from app.services.validator import InputValidator
 
 logger = logging.getLogger(__name__)
 
@@ -74,18 +75,20 @@ class StateManager:
 
             try:
                 if field == "full_name":
-                    if isinstance(value, str) and value.strip():
-                        working_data["full_name"] = value.strip()
-                        actual_delta["full_name"] = value.strip()
+                    is_valid, reason = InputValidator.validate_name(str(value) if value is not None else "")
+                    if is_valid:
+                        working_data["full_name"] = str(value).strip()
+                        actual_delta["full_name"] = str(value).strip()
                     else:
-                        validation_warnings.append(f"Invalid full_name format: {value}")
+                        validation_warnings.append(f"Rejected invalid full_name: {reason}")
 
                 elif field == "home_address":
-                    if isinstance(value, str) and value.strip():
-                        working_data["home_address"] = value.strip()
-                        actual_delta["home_address"] = value.strip()
+                    is_valid, reason = InputValidator.validate_address(str(value) if value is not None else "")
+                    if is_valid:
+                        working_data["home_address"] = str(value).strip()
+                        actual_delta["home_address"] = str(value).strip()
                     else:
-                        validation_warnings.append(f"Invalid home_address format: {value}")
+                        validation_warnings.append(f"Rejected invalid home_address: {reason}")
 
                 elif field == "covers_worldwide_assets":
                     if isinstance(value, bool):
@@ -115,7 +118,14 @@ class StateManager:
 
                 elif field == "children":
                     if isinstance(value, list):
-                        clean_children = [str(c).strip() for c in value if str(c).strip()]
+                        clean_children = []
+                        for c in value:
+                            c_str = str(c).strip()
+                            c_valid, c_reason = InputValidator.validate_name(c_str)
+                            if c_valid:
+                                clean_children.append(c_str)
+                            else:
+                                validation_warnings.append(f"Rejected invalid child name '{c_str}': {c_reason}")
                         working_data["children"] = clean_children
                         if clean_children:
                             working_data["has_children"] = True
@@ -130,9 +140,19 @@ class StateManager:
                     if isinstance(value, dict):
                         new_exec_data = copy.deepcopy(existing_exec)
                         if "name" in value and value["name"]:
-                            new_exec_data["name"] = str(value["name"]).strip()
+                            n_str = str(value["name"]).strip()
+                            n_valid, n_reason = InputValidator.validate_name(n_str)
+                            if n_valid:
+                                new_exec_data["name"] = n_str
+                            else:
+                                validation_warnings.append(f"Rejected invalid executor name '{n_str}': {n_reason}")
                         if "relationship" in value and value["relationship"]:
-                            new_exec_data["relationship"] = str(value["relationship"]).strip()
+                            r_str = str(value["relationship"]).strip()
+                            r_valid, r_reason = InputValidator.validate_relationship(r_str)
+                            if r_valid:
+                                new_exec_data["relationship"] = r_str
+                            else:
+                                validation_warnings.append(f"Rejected invalid executor relationship '{r_str}': {r_reason}")
                         
                         # Validate through Pydantic ExecutorInfo model
                         validated_exec = ExecutorInfo(**new_exec_data)
@@ -146,21 +166,40 @@ class StateManager:
                         validated_gifts = []
                         for g in value:
                             if isinstance(g, dict) and "item" in g and "recipient" in g:
-                                validated_gifts.append(GiftItem(item=str(g["item"]).strip(), recipient=str(g["recipient"]).strip()).model_dump())
+                                item_str = str(g["item"]).strip()
+                                recip_str = str(g["recipient"]).strip()
+                                item_gib, _ = InputValidator.is_gibberish(item_str)
+                                recip_gib, _ = InputValidator.is_gibberish(recip_str)
+                                if not item_gib and not recip_gib and len(item_str) >= 2 and len(recip_str) >= 2:
+                                    validated_gifts.append(GiftItem(item=item_str, recipient=recip_str).model_dump())
+                                else:
+                                    validation_warnings.append(f"Rejected invalid gift '{item_str}' to '{recip_str}'")
                         working_data["specific_gifts"] = validated_gifts
                         actual_delta["specific_gifts"] = validated_gifts
 
                 elif field == "additional_wishes":
                     if isinstance(value, list):
-                        clean_wishes = [str(w).strip() for w in value if str(w).strip()]
+                        clean_wishes = []
+                        for w in value:
+                            w_str = str(w).strip()
+                            w_gib, _ = InputValidator.is_gibberish(w_str)
+                            if not w_gib and len(w_str) >= 3:
+                                clean_wishes.append(w_str)
+                            else:
+                                validation_warnings.append(f"Rejected invalid wish '{w_str}'")
                         working_data["additional_wishes"] = clean_wishes
                         actual_delta["additional_wishes"] = clean_wishes
                     elif isinstance(value, str) and value.strip():
-                        current_wishes = working_data.get("additional_wishes") or []
-                        if value.strip() not in current_wishes:
-                            current_wishes.append(value.strip())
-                        working_data["additional_wishes"] = current_wishes
-                        actual_delta["additional_wishes"] = current_wishes
+                        w_str = value.strip()
+                        w_gib, _ = InputValidator.is_gibberish(w_str)
+                        if not w_gib and len(w_str) >= 3:
+                            current_wishes = working_data.get("additional_wishes") or []
+                            if w_str not in current_wishes:
+                                current_wishes.append(w_str)
+                            working_data["additional_wishes"] = current_wishes
+                            actual_delta["additional_wishes"] = current_wishes
+                        else:
+                            validation_warnings.append(f"Rejected invalid wish '{w_str}'")
 
             except (ValidationError, TypeError, ValueError) as err:
                 logger.error(f"Validation error for field {field}: {err}")

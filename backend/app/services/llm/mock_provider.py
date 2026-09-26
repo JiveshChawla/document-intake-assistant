@@ -4,6 +4,8 @@ from app.models.state import PersonalWishesState, GiftItem
 from app.models.chat import ChatMessage
 from app.services.llm.base import BaseLLMProvider, LLMExtractionResult
 from app.services.fixtures import FIXTURES
+from app.services.validator import InputValidator
+from app.services.llm.prompts import get_last_question_topic
 
 class MockLLMProvider(BaseLLMProvider):
     """
@@ -53,12 +55,16 @@ class MockLLMProvider(BaseLLMProvider):
         if name is not None and last_topic not in ["EXECUTOR_ALL", "EXECUTOR_NAME", "EXECUTOR_RELATIONSHIP"]:
             updates["full_name"] = name
             acknowledged_parts.append(f"name as {name}")
+        elif last_topic == "NAME" and name is None:
+            ambiguities.append(f"The input '{text}' could not be verified as a valid legal name. Please provide your legal full name.")
 
         # 5. Extract Home Address (universal support for any country)
         address = self._extract_address(text, current_state, last_topic, has_name=(name is not None))
         if address is not None:
             updates["home_address"] = address
             acknowledged_parts.append(f"address as '{address}'")
+        elif last_topic == "ADDRESS" and address is None:
+            ambiguities.append(f"The input '{text}' does not appear to be a valid residential address. Please provide your physical street and city.")
 
         # 6. Extract Worldwide Assets Scope
         scope, scope_ambiguity = self._extract_asset_scope(text, last_topic)
@@ -134,6 +140,12 @@ class MockLLMProvider(BaseLLMProvider):
         elif wishes_declined:
             acknowledged_parts.append("no additional personal wishes to add")
 
+        # 10.5 Validate proposed updates against strict schema
+        validated_updates, rejections = InputValidator.validate_proposed_updates(updates, text)
+        if rejections:
+            ambiguities.extend(rejections)
+        updates = validated_updates
+
         # 11. Simulate future state to compute next question
         simulated_state = self._simulate_state(current_state, updates)
 
@@ -166,56 +178,7 @@ class MockLLMProvider(BaseLLMProvider):
     # -------------------------------------------------------------
     def _get_last_question_topic(self, history: List[ChatMessage]) -> Optional[str]:
         """Finds what question the assistant asked in the latest turn."""
-        for msg in reversed(history):
-            if msg.role == "assistant":
-                # Look at the question portion (last paragraph) to avoid false matches on acknowledgment headers
-                paragraphs = [p.strip() for p in msg.content.split("\n\n") if p.strip()]
-                question_text = paragraphs[-1].lower() if paragraphs else msg.content.lower()
-
-                # 1. GIFTS & WISHES SUB-TOPICS (Check specific follow-up sub-topics first)
-                if "other personal wishes" in question_text or "ready to finalize" in question_text:
-                    return "WISHES_DETAILS"
-                if "describe your additional wishes" in question_text or "additional wishes or directives" in question_text:
-                    return "WISHES_DETAILS"
-                if "additional personal wishes" in question_text or "additional wishes" in question_text or "funeral arrangements" in question_text or "memorial preferences" in question_text:
-                    return "WISHES"
-
-                if "any other specific gifts" in question_text or "move on to additional" in question_text:
-                    return "GIFTS_OR_WISHES"
-                if "describe the specific gifts" in question_text or "who should receive each" in question_text or "specific gifts or bequests and who" in question_text:
-                    return "GIFTS_DETAILS"
-                if "specific gifts" in question_text or "bequests" in question_text:
-                    return "GIFTS"
-
-                # 2. EXECUTOR TOPICS (Must check FIRST before principal NAME so 'full legal name of your executor' maps to EXECUTOR_NAME)
-                if "executor" in question_text or "administer your estate" in question_text:
-                    if "full legal name" in question_text or "full name" in question_text or "what is the name" in question_text or "what is the full" in question_text:
-                        return "EXECUTOR_NAME"
-                    if "relationship" in question_text:
-                        if not ("who would you like" in question_text or "appoint" in question_text):
-                            return "EXECUTOR_RELATIONSHIP"
-                    return "EXECUTOR_ALL"
-                if "relationship to you" in question_text:
-                    return "EXECUTOR_RELATIONSHIP"
-
-                # 3. PRINCIPAL FULL NAME
-                if "legal name" in question_text or "tell me your full name" in question_text or "what is your full name" in question_text or "your name" in question_text:
-                    return "NAME"
-
-                # 4. RESIDENTIAL ADDRESS
-                if "residential" in question_text or "home address" in question_text or "where do you live" in question_text:
-                    return "ADDRESS"
-
-                # 5. ASSET JURISDICTION
-                if "worldwide assets" in question_text or "strictly domestic" in question_text or "country of residence" in question_text:
-                    return "WORLDWIDE"
-
-                # 6. CHILDREN
-                if "names of your children" in question_text or "names of your child" in question_text:
-                    return "CHILDREN_NAMES"
-                if "have any children" in question_text or "do you have children" in question_text:
-                    return "CHILDREN_STATUS"
-        return None
+        return get_last_question_topic(history)
 
     # -------------------------------------------------------------
     # Extraction Helpers
@@ -277,7 +240,9 @@ class MockLLMProvider(BaseLLMProvider):
         n = re.split(r"\s+(?:and|who|with)\b", n, flags=re.IGNORECASE)[0].strip()
         parts = n.split()
         if len(parts) >= 1 and len(n) >= 2:
-            return n
+            is_valid, _ = InputValidator.validate_name(n)
+            if is_valid:
+                return n
         return None
 
     def _extract_address(
@@ -300,7 +265,9 @@ class MockLLMProvider(BaseLLMProvider):
                 # Avoid capturing trailing multi-field statements
                 addr = re.split(r"\s+(?:and\s+(?:i\s+want|i\s+don't|worldwide|no\s+children|my\s+executor)|worldwide|no\s+kids)\b", addr, flags=re.IGNORECASE)[0].strip()
                 if len(addr) >= 4:
-                    return addr
+                    is_valid, _ = InputValidator.validate_address(addr)
+                    if is_valid:
+                        return addr
 
         # Contextual: Assistant asked for residential address
         if last_topic == "ADDRESS":
@@ -311,7 +278,9 @@ class MockLLMProvider(BaseLLMProvider):
             # Split off any subsequent clauses if user provided multi-field info
             candidate = re.split(r"\s+(?:and\s+(?:i\s+want|worldwide|i\s+have|no\s+kids|my\s+executor)|worldwide)\b", candidate, flags=re.IGNORECASE)[0].strip().rstrip(".,")
             if len(candidate) >= 4 and not re.search(r"\b(yes|no|none|cancel)\b", candidate, re.IGNORECASE):
-                return candidate
+                is_valid, _ = InputValidator.validate_address(candidate)
+                if is_valid:
+                    return candidate
 
         # Multi-field fallback: if text has "10 Downing St" or digits followed by text with comma
         if re.search(r"\b\d+\s+[^,]+(?:,[^,]+)+", text):
@@ -319,7 +288,9 @@ class MockLLMProvider(BaseLLMProvider):
             if m:
                 cand = m.group(0).strip().rstrip(".,")
                 cand = re.split(r"\s+(?:and|worldwide)\b", cand, flags=re.IGNORECASE)[0].strip()
-                return cand
+                is_valid, _ = InputValidator.validate_address(cand)
+                if is_valid:
+                    return cand
 
         return None
 
@@ -411,7 +382,9 @@ class MockLLMProvider(BaseLLMProvider):
             cleaned = re.sub(r"^(?:my\s+son|my\s+daughter|son|daughter)\s+", "", cleaned, flags=re.IGNORECASE).strip()
             cleaned = re.sub(r"^(?:and|&)\s+", "", cleaned, flags=re.IGNORECASE).strip()
             if cleaned and len(cleaned) >= 2 and not re.search(r"\b(yes|no|children|none)\b", cleaned, re.IGNORECASE):
-                names.append(cleaned)
+                is_valid, _ = InputValidator.validate_name(cleaned)
+                if is_valid:
+                    names.append(cleaned)
         return names
 
     def _extract_executor(
@@ -460,14 +433,20 @@ class MockLLMProvider(BaseLLMProvider):
                 if re.search(r"\b(i want|want|appoint|nominate|would like|choose|have|wish|will)\b", cand_lower):
                     continue
                 if len(cand) >= 2:
-                    name = cand
-                    break
+                    is_valid, _ = InputValidator.validate_name(cand)
+                    if is_valid:
+                        name = cand
+                        break
 
         # If assistant previously asked specifically for the name ("What is the full name of your [relationship]?")
         if last_topic == "EXECUTOR_NAME":
             clean = re.sub(r"^(?:his name is|her name is|their name is|it is|it's|name is|i choose|appoint)\s+", "", text.strip(), flags=re.IGNORECASE).rstrip(".,")
             if len(clean) >= 2 and not re.search(r"\b(yes|no|none|cancel)\b", clean, re.IGNORECASE):
-                name = clean
+                is_valid, reason = InputValidator.validate_name(clean)
+                if is_valid:
+                    name = clean
+                else:
+                    return None, f"The executor name '{clean}' does not appear to be a valid legal name ({reason}). Please provide their full legal name."
 
         # If assistant previously asked specifically for relationship ("What is [name]'s relationship to you?")
         if last_topic == "EXECUTOR_RELATIONSHIP":
@@ -478,13 +457,21 @@ class MockLLMProvider(BaseLLMProvider):
                     relationship = r
                     break
             if not relationship and len(clean_rel) >= 3:
-                relationship = clean_rel
+                is_valid, reason = InputValidator.validate_relationship(clean_rel)
+                if is_valid:
+                    relationship = clean_rel
+                else:
+                    return None, f"The relationship '{clean_rel}' is not recognized ({reason}). Please specify their relationship to you (e.g., brother, friend, solicitor)."
 
         # Contextual direct answer to "Who would you like to appoint as your Executor...?"
         if last_topic == "EXECUTOR_ALL" and not name and not relationship:
             clean = re.sub(r"^(?:i want to appoint|i want|i appoint|appoint|my executor is|it is|it's)\s+", "", text.strip(), flags=re.IGNORECASE).rstrip(".,")
             if len(clean) >= 2 and not re.search(r"\b(yes|no|none|cancel)\b", clean, re.IGNORECASE):
-                name = clean
+                is_valid, reason = InputValidator.validate_name(clean)
+                if is_valid:
+                    name = clean
+                else:
+                    return None, f"The executor name '{clean}' does not appear to be a valid legal name ({reason}). Please provide their full legal name."
 
         # Check existing executor values for merging
         existing_name = current_state.executor.name if current_state.executor else None
@@ -492,6 +479,17 @@ class MockLLMProvider(BaseLLMProvider):
 
         final_name = name or existing_name
         final_rel = relationship or existing_rel
+
+        # Validate final_name and final_rel if present
+        if final_name:
+            is_valid_n, n_reason = InputValidator.validate_name(final_name)
+            if not is_valid_n:
+                return None, f"Executor name '{final_name}' is invalid ({n_reason}). Please provide their full legal name."
+
+        if final_rel:
+            is_valid_r, r_reason = InputValidator.validate_relationship(final_rel)
+            if not is_valid_r:
+                return None, f"Executor relationship '{final_rel}' is invalid ({r_reason}). Please specify their relationship."
 
         # Check ambiguity cases
         if final_rel and not final_name:
