@@ -8,8 +8,8 @@
 [![Gemini](https://img.shields.io/badge/Google_Gemini-1.5_Flash-4285F4?style=flat&logo=google&logoColor=white)](https://ai.google.dev)
 [![Pytest](https://img.shields.io/badge/Pytest-77%20Passed-green?style=flat&logo=pytest&logoColor=white)](https://docs.pytest.org)
 
-**Live Production Deployment:** [🌐 View Live Application on Vercel](https://document-intake-assistant-seven.vercel.app/)  
-**GitHub Repository:** [📂 View Source Code on GitHub](https://github.com/JiveshChawla/document-intake-assistant)
+**Live Production Deployment:** [🌐 View Live Application on Vercel]([https://document-intake-assistant-seven.vercel.app/])  
+
 
 A production-grade, enterprise legal-tech conversational intake assistant that conducts guided estate and testamentary interviews. It dynamically extracts user inputs into a validated **Personal Wishes Document** (Last Will & Personal Directives), maintains a single source of truth structured JSON state backed by SQLite persistence, and renders a live, real-time draft paper with isolated print/PDF export.
 
