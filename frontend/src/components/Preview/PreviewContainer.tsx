@@ -28,13 +28,13 @@ export const PreviewContainer: React.FC<PreviewContainerProps> = ({
   const isComplete = completionPercentage === 100;
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-900 overflow-hidden transition-colors duration-200">
+    <div className="preview-container flex flex-col h-full bg-white dark:bg-slate-900 overflow-hidden transition-colors duration-200">
       {/* Tab Navigation Bar - Sequence:
           1. Intake Completeness & Edit (Questions/progress cards first)
           2. Live Document Draft (Legal view second)
           3. Structured JSON State (Raw JSON third)
       */}
-      <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800 px-6 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs z-20 transition-colors">
+      <div className="preview-tabs flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800 px-6 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs z-20 transition-colors no-print">
         <div className="flex items-center gap-1 sm:gap-2">
           {/* Tab 1: Intake Completeness & Edit (FIRST) */}
           <button
@@ -92,28 +92,33 @@ export const PreviewContainer: React.FC<PreviewContainerProps> = ({
       </div>
 
       {/* Tab Body */}
-      <div className="flex-1 overflow-hidden">
+      <div className="preview-body flex-1 overflow-hidden">
         {activeTab === 'completeness' && (
-          <ProgressTracker
-            state={state}
-            completionPercentage={completionPercentage}
-            onSaveState={onSaveStateDirectly}
-          />
+          <div className="h-full overflow-hidden no-print">
+            <ProgressTracker
+              state={state}
+              completionPercentage={completionPercentage}
+              onSaveState={onSaveStateDirectly}
+            />
+          </div>
         )}
 
-        {activeTab === 'document' && (
+        {/* Live Document Draft (Tab 2) */}
+        <div className={`h-full overflow-hidden ${activeTab === 'document' ? 'block' : 'hidden print:block'}`}>
           <DocumentPreview
             html={documentHtml}
             markdown={documentMarkdown}
             completionPercentage={completionPercentage}
           />
-        )}
+        </div>
 
         {activeTab === 'state' && (
-          <StateViewer
-            state={state}
-            onOpenEditModal={onOpenEditModal}
-          />
+          <div className="h-full overflow-hidden no-print">
+            <StateViewer
+              state={state}
+              onOpenEditModal={onOpenEditModal}
+            />
+          </div>
         )}
       </div>
     </div>

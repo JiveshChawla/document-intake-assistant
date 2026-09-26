@@ -23,7 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   const isComplete = completionPercentage === 100;
 
   return (
-    <header className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-6 py-3 sticky top-0 z-30 shadow-xs transition-colors duration-200">
+    <header className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-6 py-3 sticky top-0 z-30 shadow-xs transition-colors duration-200 no-print">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
         {/* Brand & Title */}
         <div className="flex items-center gap-3">

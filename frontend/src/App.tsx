@@ -147,7 +147,7 @@ export function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200">
+    <div className="app-root h-screen flex flex-col bg-slate-100 dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-200">
       {/* Top Header */}
       <Header
         activeProvider={session?.active_provider || 'mock'}
@@ -160,7 +160,7 @@ export function App() {
 
       {/* Global Error Banner */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-950/80 border-b border-red-200 dark:border-red-900 px-6 py-2.5 text-xs text-red-800 dark:text-red-300 flex items-center justify-between">
+        <div className="no-print bg-red-50 dark:bg-red-950/80 border-b border-red-200 dark:border-red-900 px-6 py-2.5 text-xs text-red-800 dark:text-red-300 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0" />
             <span>{error}</span>
@@ -175,9 +175,9 @@ export function App() {
       )}
 
       {/* Split-screen Main Layout */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+      <main className="app-main flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
         {/* Left Side: Interactive Conversational Interview (5 cols on lg, approx 42%) */}
-        <section className="lg:col-span-5 h-full overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-200/80 dark:border-slate-800">
+        <section className="chat-section lg:col-span-5 h-full overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-200/80 dark:border-slate-800 no-print">
           <ChatContainer
             messages={session?.messages || []}
             onSendMessage={handleSendMessage}
@@ -191,7 +191,7 @@ export function App() {
             2. Live Document Draft
             3. Structured JSON State
         */}
-        <section className="lg:col-span-7 h-full overflow-hidden">
+        <section className="preview-section lg:col-span-7 h-full overflow-hidden">
           <PreviewContainer
             state={session?.state || ({} as PersonalWishesState)}
             documentMarkdown={session?.document_markdown || ''}
@@ -205,12 +205,14 @@ export function App() {
 
       {/* Manual State Override / Inspector Modal */}
       {session && (
-        <StateEditModal
-          isOpen={isEditModalOpen}
-          onClose={() => setIsEditModalOpen(false)}
-          currentState={session.state}
-          onSaveState={handleSaveStateDirectly}
-        />
+        <div className="no-print">
+          <StateEditModal
+            isOpen={isEditModalOpen}
+            onClose={() => setIsEditModalOpen(false)}
+            currentState={session.state}
+            onSaveState={handleSaveStateDirectly}
+          />
+        </div>
       )}
     </div>
   );

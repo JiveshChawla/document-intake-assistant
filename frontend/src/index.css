@@ -437,21 +437,326 @@
   animation: typing-bounce 1.4s infinite ease-in-out both 0.4s;
 }
 
-/* Print specific */
+/* -------------------------------------------------------------
+   Clean, Isolated Legal Document Print & PDF Styling
+------------------------------------------------------------- */
 @media print {
-  body {
+  @page {
+    size: portrait;
+    margin: 20mm 18mm 20mm 18mm;
+  }
+
+  /* Force color and print fidelity */
+  *,
+  *::before,
+  *::after {
+    text-shadow: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Suppress browser link URL injection */
+  a[href]::after {
+    content: "" !important;
+  }
+
+  /* Reset all root/html/body scrollbars and fixed viewport heights */
+  html,
+  body,
+  #root,
+  .app-root,
+  main,
+  section,
+  .preview-section,
+  .preview-container,
+  .preview-body,
+  .document-preview-container,
+  .document-viewport,
+  .document-wrapper,
+  .printable-legal-document {
+    background: #ffffff !important;
     background-color: #ffffff !important;
-    color: #000000 !important;
-  }
-  .no-print {
-    display: none !important;
-  }
-  .legal-document {
+    color: #0f172a !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    display: block !important;
+    float: none !important;
     box-shadow: none !important;
     border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Strictly isolate the document: Hide all UI chrome, chats, navbars, sidebars, tabs, buttons */
+  header,
+  nav,
+  aside,
+  footer,
+  .no-print,
+  .chat-section,
+  .preview-tabs,
+  .action-toolbar,
+  .state-edit-modal,
+  .global-error-banner,
+  button,
+  [role="dialog"],
+  [role="tablist"] {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Formal Legal Document Paper Presentation for Print */
+  .legal-document,
+  .dark .legal-document {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
-    background-color: #ffffff !important;
-    color: #000000 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    font-family: 'Newsreader', 'Georgia', 'Times New Roman', serif !important;
+    font-size: 11pt !important;
+    line-height: 1.65 !important;
+    orphans: 3 !important;
+    widows: 3 !important;
+  }
+
+  .legal-document .legal-document {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+
+  /* Headers, titles, and meta */
+  .doc-header {
+    text-align: center !important;
+    margin-bottom: 2rem !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  .doc-meta-top,
+  .dark .doc-meta-top {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    color: #64748b !important;
+    font-size: 8.5pt !important;
+    margin-bottom: 1.25rem !important;
+  }
+
+  .doc-title,
+  .dark .doc-title {
+    font-size: 18pt !important;
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.05em !important;
+    margin-bottom: 0.25rem !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  .doc-subtitle,
+  .dark .doc-subtitle {
+    font-size: 9.5pt !important;
+    color: #475569 !important;
+    margin-bottom: 1rem !important;
+  }
+
+  .doc-divider,
+  .dark .doc-divider {
+    border-top: 1.5pt solid #0f172a !important;
+    margin: 1rem auto 0 auto !important;
+    width: 60% !important;
+  }
+
+  /* Section Headings and Page Breaking Controls */
+  .doc-section {
+    margin-bottom: 1.5rem !important;
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  .doc-section h2,
+  .dark .doc-section h2 {
+    font-size: 12pt !important;
+    color: #0f172a !important;
+    border-bottom: 1pt solid #cbd5e1 !important;
+    padding-bottom: 0.35rem !important;
+    margin-bottom: 0.75rem !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  .doc-section p {
+    margin-bottom: 0.65rem !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Table formatting in print */
+  .doc-table,
+  .dark .doc-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin-top: 0.75rem !important;
+    font-size: 9.5pt !important;
+  }
+
+  .doc-table th,
+  .doc-table td,
+  .dark .doc-table th,
+  .dark .doc-table td {
+    border: 1pt solid #94a3b8 !important;
+    padding: 0.5rem 0.75rem !important;
+    color: #0f172a !important;
+  }
+
+  .doc-table th,
+  .dark .doc-table th {
+    background-color: #f1f5f9 !important;
+    color: #1e293b !important;
+    font-weight: 700 !important;
+  }
+
+  /* Badges & Pills */
+  .doc-status-badge,
+  .dark .doc-status-badge,
+  .scope-pill,
+  .dark .scope-pill {
+    border: 1pt solid #94a3b8 !important;
+    font-size: 8pt !important;
+    padding: 0.15rem 0.5rem !important;
+  }
+
+  .status-complete,
+  .dark .status-complete {
+    background-color: #ecfdf5 !important;
+    color: #047857 !important;
+    border-color: #6ee7b7 !important;
+  }
+
+  .status-incomplete,
+  .dark .status-incomplete {
+    background-color: #fffbeb !important;
+    color: #b45309 !important;
+    border-color: #fcd34d !important;
+  }
+
+  .scope-worldwide,
+  .dark .scope-worldwide {
+    background-color: #eff6ff !important;
+    color: #1d4ed8 !important;
+    border-color: #93c5fd !important;
+  }
+
+  .scope-domestic,
+  .dark .scope-domestic {
+    background-color: #f8fafc !important;
+    color: #334155 !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  .pending-field,
+  .dark .pending-field {
+    background-color: #fffbeb !important;
+    border: 1pt dashed #d97706 !important;
+    color: #b45309 !important;
+    font-size: 8.5pt !important;
+  }
+
+  .legal-disclaimer-banner,
+  .dark .legal-disclaimer-banner {
+    background-color: #fef2f2 !important;
+    border: 1pt solid #fca5a5 !important;
+    color: #991b1b !important;
+    font-size: 8.5pt !important;
+    padding: 0.6rem 0.9rem !important;
+    margin-bottom: 1.5rem !important;
+    border-radius: 4pt !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Execution and Signature Block: NEVER cut off or split signatures across pages */
+  .execution-section,
+  .dark .execution-section {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    border-top: 1.5pt solid #0f172a !important;
+    margin-top: 2rem !important;
+    padding-top: 1.5rem !important;
+  }
+
+  .signature-line {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin-top: 2rem !important;
+    margin-bottom: 1.5rem !important;
+  }
+
+  .sig-stroke,
+  .dark .sig-stroke {
+    border-bottom: 1.5pt solid #0f172a !important;
+  }
+
+  .sig-name,
+  .dark .sig-name {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+  }
+
+  /* Witness Box: NEVER cut across pages */
+  .witness-box,
+  .dark .witness-box {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    background-color: #f8fafc !important;
+    border: 1pt solid #94a3b8 !important;
+    border-radius: 4pt !important;
+    padding: 1.25rem !important;
+    margin-top: 1.5rem !important;
+  }
+
+  .witness-box h3,
+  .dark .witness-box h3 {
+    color: #0f172a !important;
+    font-size: 10pt !important;
+  }
+
+  .witness-intro,
+  .dark .witness-intro {
+    color: #475569 !important;
+    font-size: 8.5pt !important;
+  }
+
+  .witness-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 1.5rem !important;
+  }
+
+  .witness-col,
+  .dark .witness-col {
+    color: #0f172a !important;
+    font-size: 8.5pt !important;
+  }
+
+  .witness-col .line,
+  .dark .witness-col .line {
+    color: #475569 !important;
   }
 }
