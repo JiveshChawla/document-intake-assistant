@@ -26,28 +26,31 @@ Below are key views showcasing the user experience, real-time document drafting,
 *High-end enterprise landing page featuring bold typography, vibrant accent badges, a live-turn mockup preview, and a 4-card feature value proposition grid.*
 
 <img width="1917" height="910" alt="image" src="https://github.com/user-attachments/assets/092d3473-8cd1-443b-8eea-720eaee892fa" />
-(./screenshots/landing-page.png)
+
 
 ---
 
 ### 2. Conversational Intake & Split-Screen Workspace
 *Multi-turn conversational intake interface running side-by-side with the 3-tab workspace (Intake Completeness, Live Legal Paper Draft, and Structured JSON State).*
 
-![Chat and Preview Workspace](./screenshots/chat-and-preview.png)
+<img width="1916" height="908" alt="Screenshot 2026-09-26 172939" src="https://github.com/user-attachments/assets/cce0e1d9-3466-4d8a-ae47-cbc5d8478535" />
+
 
 ---
 
 ### 3. Non-Linear Mid-Interview Field Correction
 *Proactive correction handling: The user updates their address mid-interview out of order, and the state manager instantly pivots and updates the field.*
 
-![Mid-Interview Correction](./screenshots/mid-interview-edit.png)
+<img width="1913" height="903" alt="Screenshot 2026-09-26 172617" src="https://github.com/user-attachments/assets/458c2ea8-b229-47d2-ab59-3413304c0a30" />
+
 
 ---
 
 ### 4. Isolated Print / PDF Legal Export View
 *Isolated print view: Suppresses all application UI chrome and formats the document on clean parchment-style serif typography with protected signature and witness blocks.*
 
-![Print and PDF View](./screenshots/print-pdf-view.png)
+<img width="1117" height="847" alt="Screenshot 2026-09-26 172722" src="https://github.com/user-attachments/assets/69a6171e-4db1-41a0-80ad-a7fe03369ab1" />
+
 
 ---
 
